@@ -13,24 +13,57 @@ function MovEditor({ mov, onProgress, onDelete }) {
       <div className="mov-score">
         <input aria-label={`Progress for ${mov.title}`} type="range" min="0" max="100" value={mov.progress} onChange={event => onProgress(mov.id, Number(event.target.value))} />
         <strong>{mov.progress}%</strong>
-        {onDelete && <button type="button" className="delete-small" onClick={() => onDelete(mov.id)} aria-label="Remove means of verification"><Trash2 size={14} /></button>}
+        {onDelete && <button type="button" className="delete-small" onClick={() => onDelete(mov.id)} aria-label="Remove verification check"><Trash2 size={14} /></button>}
       </div>
     </div>
   );
 }
 
-function KeyResultList({ keyResults, onProgress }) {
+function KrMeansEditor({ means, label, onSave, onAdd, onRemove }) {
+  const [draft, setDraft] = useState('');
+  return (
+    <div className="kr-means">
+      <span>Means of verification</span>
+      {means.map((mean, index) => (
+        <div className="kr-mean-row" key={mean.id}>
+          <input
+            aria-label={`${label} means of verification ${index + 1}`}
+            value={mean.title}
+            onChange={event => onSave(mean.id, event.target.value)}
+            placeholder="Means of verification"
+          />
+          <button type="button" className="delete-small" aria-label={`${label} remove means of verification ${index + 1}`} onClick={() => onRemove(mean.id)}><Trash2 size={14} /></button>
+        </div>
+      ))}
+      <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!draft.trim()) return; onAdd(draft.trim()); setDraft(''); }}>
+        <input aria-label={`${label} add a means of verification`} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Add a means of verification" />
+        <button type="submit"><Plus size={14} /> Add</button>
+      </form>
+    </div>
+  );
+}
+
+function KeyResultList({ keyResults, onProgress, onSaveMean, onAddMean, onRemoveMean }) {
   return (
     <section className="kr-block">
       <div className="section-head"><b>Key results</b><span>{keyResults.length} results score this objective</span></div>
       {keyResults.map((item, index) => (
-        <div className="kr-row" key={item.id}>
-          <span className="kr-code">KR{index + 1}</span>
-          <b>{item.title}</b>
-          <div className="mov-score">
-            <input aria-label={`Progress for ${item.title}`} type="range" min="0" max="100" value={item.progress} onChange={event => onProgress(item.id, Number(event.target.value))} />
-            <strong>{item.progress}%</strong>
+        <div className="kr-item" key={item.id}>
+          <div className="kr-row">
+            <span className="kr-code">KR{index + 1}</span>
+            <b>{item.title}</b>
+            <div className="mov-score">
+              <input aria-label={`Progress for ${item.title}`} type="range" min="0" max="100" value={item.progress} onChange={event => onProgress(item.id, Number(event.target.value))} />
+              <strong>{item.progress}%</strong>
+            </div>
           </div>
+          <KrMeansEditor
+            means={item.means || []}
+            label={`KR${index + 1}`}
+            onSave={onSaveMean}
+            onAdd={title => onAddMean(item.id, title)}
+            onRemove={onRemoveMean}
+          />
         </div>
       ))}
     </section>
@@ -56,7 +89,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
         </p>
       )}
       <div className="initiative-meta">
-        <span>{initiative.verified}/{initiative.movs.length} means of verification complete</span>
+        <span>{initiative.verified}/{initiative.movs.length} verification checks complete</span>
         {initiative.external?.url ? (
           <a href={initiative.external.url} target="_blank" rel="noreferrer">
             <ExternalLink size={13} />
@@ -66,11 +99,11 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
       </div>
       <div className="mov-list">
         {initiative.movs.map(mov => <MovEditor key={mov.id} mov={mov} onProgress={onProgress} />)}
-        {!initiative.movs.length && <p className="quiet">No means of verification yet.</p>}
+        {!initiative.movs.length && <p className="quiet">No verification checks yet.</p>}
       </div>
       {showAdd && (
         <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!title.trim()) return; onAdd(initiative.id, title.trim()); setTitle(''); }}>
-          <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a means of verification" />
+          <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a verification check" />
           <button type="submit"><Plus size={14} /> Add</button>
         </form>
       )}
@@ -78,7 +111,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
   );
 }
 
-export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onKeyResult }) {
+export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   return (
     <article className={`objective-card ${open ? 'open' : ''}`} id={`objective-${objective.id}`}>
       <button type="button" className="objective-main" onClick={onToggle}>
@@ -113,7 +146,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
               </div>
             </div>
           </div>
-          <KeyResultList keyResults={objective.keyResults} onProgress={onKeyResult} />
+          <KeyResultList keyResults={objective.keyResults} onProgress={onKeyResult} onSaveMean={onSaveMean} onAddMean={onAddMean} onRemoveMean={onRemoveMean} />
           {objective.initiatives.map(initiative => (
             <InitiativePanel key={initiative.id} initiative={initiative} onProgress={onProgress} onAdd={onAddVerification} />
           ))}
@@ -126,7 +159,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
   );
 }
 
-export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification, onKeyResult }) {
+export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   const objectives = goal.objectives.filter(item => year === 'all' || item.year === year);
   return (
     <div className="cascade-list">
@@ -140,6 +173,9 @@ export function GoalCascade({ goal, year, openObjective, setOpenObjective, onMan
           onProgress={onProgress}
           onAddVerification={onAddVerification}
           onKeyResult={onKeyResult}
+          onSaveMean={onSaveMean}
+          onAddMean={onAddMean}
+          onRemoveMean={onRemoveMean}
         />
       ))}
       {!objectives.length && <Empty title="No objectives in this year" detail="Add an objective for the selected year, or choose another year." />}
@@ -213,7 +249,7 @@ export function ObjectiveModal({ goals, divisions, presetGoalId, onClose, onSave
   const titles = form.keyResults.map(title => title.trim());
   const keyResultsReady = titles.length >= KEY_RESULT_MIN && titles.length <= KEY_RESULT_MAX && titles.every(Boolean);
   return (
-    <Modal eyebrow="NEW OBJECTIVE" title="Add an objective" subtitle="A division owns the objective for a plan year, with three or four key results. Supporting divisions can contribute, and the work is delivered through team initiatives." onClose={onClose}>
+    <Modal eyebrow="NEW OBJECTIVE" title="Add an objective" subtitle="A division owns the objective for a plan year, with three or four key results. Add a means of verification on each key result after the objective is created." onClose={onClose}>
       <form onSubmit={event => { event.preventDefault(); if (!form.title.trim() || !form.goalId || !form.divisionId || !keyResultsReady) return; onSave({ ...form, title: form.title.trim(), description: form.description.trim(), keyResults: titles, quarters: blankQuarters() }); }}>
         <Field label="Strategic goal" full>
           <select name="goalId" value={form.goalId} onChange={set}>{grouped.map(goal => <option key={goal.id} value={goal.id}>{goal.code} · {goal.title}</option>)}</select>
@@ -309,17 +345,26 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
         </form>
 
         <section className="drawer-section">
-          <div className="section-head"><div><b>Key results</b><span>Three or four measurable results. Their average is this objective’s progress.</span></div></div>
+          <div className="section-head"><div><b>Key results</b><span>Three or four measurable results. Their average is this objective’s progress. Means of verification are entered under each result.</span></div></div>
           <div className="kr-edit">
             {objective.keyResults.map((item, index) => (
-              <div className="kr-edit-row" key={item.id}>
-                <span className="kr-code">KR{index + 1}</span>
-                <input aria-label={`KR${index + 1} title`} value={item.title} onChange={event => actions.saveKeyResult(item.id, { title: event.target.value })} />
-                <div className="mov-score">
-                  <input aria-label={`KR${index + 1} progress`} type="range" min="0" max="100" value={item.progress} onChange={event => actions.saveKeyResult(item.id, { progress: Number(event.target.value) })} />
-                  <strong>{item.progress}%</strong>
+              <div className="kr-edit-item" key={item.id}>
+                <div className="kr-edit-row">
+                  <span className="kr-code">KR{index + 1}</span>
+                  <input aria-label={`KR${index + 1} title`} value={item.title} onChange={event => actions.saveKeyResult(item.id, { title: event.target.value })} />
+                  <div className="mov-score">
+                    <input aria-label={`KR${index + 1} progress`} type="range" min="0" max="100" value={item.progress} onChange={event => actions.saveKeyResult(item.id, { progress: Number(event.target.value) })} />
+                    <strong>{item.progress}%</strong>
+                  </div>
+                  <button type="button" className="delete-small" disabled={objective.keyResults.length <= KEY_RESULT_MIN} aria-label={`Remove KR${index + 1}`} onClick={() => actions.deleteKeyResult(item.id)}><Trash2 size={14} /></button>
                 </div>
-                <button type="button" className="delete-small" disabled={objective.keyResults.length <= KEY_RESULT_MIN} aria-label={`Remove KR${index + 1}`} onClick={() => actions.deleteKeyResult(item.id)}><Trash2 size={14} /></button>
+                <KrMeansEditor
+                  means={item.means || []}
+                  label={`KR${index + 1}`}
+                  onSave={actions.saveKrMean}
+                  onAdd={title => actions.addKrMean(item.id, title)}
+                  onRemove={actions.deleteKrMean}
+                />
               </div>
             ))}
             {objective.keyResults.length < KEY_RESULT_MAX && <AddKeyResult onAdd={title => actions.addKeyResult(objective.id, title)} />}
@@ -399,13 +444,13 @@ function AddMov({ onAdd }) {
   const [title, setTitle] = useState('');
   return (
     <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!title.trim()) return; onAdd(title.trim()); setTitle(''); }}>
-      <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a means of verification" />
+      <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a verification check" />
       <button type="submit"><Plus size={14} /> Add</button>
     </form>
   );
 }
 
-export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onManage, onKeyResult }) {
+export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onManage, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   const [openGoal, setOpenGoal] = useState(null);
   const [openObjective, setOpenObjective] = useState(null);
   return (
@@ -441,6 +486,9 @@ export function AlignmentTree({ pillars, year, onProgress, onAddVerification, on
                     onProgress={onProgress}
                     onAddVerification={onAddVerification}
                     onKeyResult={onKeyResult}
+                    onSaveMean={onSaveMean}
+                    onAddMean={onAddMean}
+                    onRemoveMean={onRemoveMean}
                   />
                 ))}
                 {open && !objectives.length && <Empty title="No objectives for this year" detail="Change the year filter to see the rest of the goal." />}

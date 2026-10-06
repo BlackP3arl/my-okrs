@@ -101,7 +101,7 @@ export default function App() {
     },
     deleteGoal(id) {
       const match = state.goals.find(item => item.id === id);
-      if (!match || !window.confirm(`Delete strategic goal ${match.code}? Its objectives and initiatives will be removed.`)) return;
+      if (!match || !window.confirm(`Delete strategic goal ${match.code}? Its objectives, key results, means of verification, and initiatives will be removed.`)) return;
       setState(current => removeGoal(current, id));
       setGoalId(null);
       setPage('Strategy');
@@ -128,7 +128,7 @@ export default function App() {
       setObjectiveId(id);
     },
     deleteObjective(id) {
-      if (!window.confirm('Delete this objective, its key results, and its initiatives?')) return;
+      if (!window.confirm('Delete this objective, its key results, means of verification, and initiatives?')) return;
       setState(current => removeObjective(current, id));
       setObjectiveId(null);
     },
@@ -160,8 +160,29 @@ export default function App() {
         if (!match) return current;
         const count = keyResults.filter(item => item.objectiveId === match.objectiveId).length;
         if (count <= KEY_RESULT_MIN) return current;
-        return { ...current, keyResults: keyResults.filter(item => item.id !== id) };
+        return {
+          ...current,
+          keyResults: keyResults.filter(item => item.id !== id),
+          krMeans: (current.krMeans || []).filter(item => item.keyResultId !== id),
+        };
       });
+    },
+    saveKrMean(id, title) {
+      setState(current => ({
+        ...current,
+        krMeans: (current.krMeans || []).map(item => item.id === id ? { ...item, title } : item),
+      }));
+    },
+    addKrMean(keyResultId, title) {
+      const clean = title.trim();
+      if (!clean) return;
+      setState(current => ({
+        ...current,
+        krMeans: [...(current.krMeans || []), { id: uid('krm'), keyResultId, title: clean }],
+      }));
+    },
+    deleteKrMean(id) {
+      setState(current => ({ ...current, krMeans: (current.krMeans || []).filter(item => item.id !== id) }));
     },
     addInitiative(initiative) { setState(current => ({ ...current, initiatives: [...current.initiatives, initiative] })); },
     saveInitiative(id, patch) {
@@ -171,7 +192,7 @@ export default function App() {
       }));
     },
     deleteInitiative(id) {
-      if (!window.confirm('Delete this team initiative and its means of verification?')) return;
+      if (!window.confirm('Delete this team initiative and its verification checks?')) return;
       setState(current => removeInitiative(current, id));
     },
     saveVerification(id, progressOrPatch) {
@@ -254,7 +275,7 @@ function Sidebar({ open, page, go, close, profile, reviewsDue }) {
       </nav>
       <div className="sidebar-card">
         <b>How the plan links</b>
-        <p>Priority areas hold the strategic goals. Each objective has three or four key results. Team initiatives connect that work to projects tracked outside this system.</p>
+        <p>Priority areas hold the strategic goals. Each objective has three or four key results, and each key result has means of verification. Team initiatives connect that work to projects tracked outside this system.</p>
       </div>
       <img className="sidebar-forward" src="/brand/mpao-forward-white.png" alt="" />
       <div className="sidebar-foot">
@@ -274,7 +295,7 @@ function StrategyPage({ view, openGoal, addGoal, showCross }) {
         <div>
           <div className="eyebrow">STRATEGIC PERFORMANCE</div>
           <h1>Where the plan stands</h1>
-          <p>Organisational performance is the overall progress of the strategic goals. Open a goal to reach its objectives, key results, team initiatives, and means of verification.</p>
+          <p>Organisational performance is the overall progress of the strategic goals. Open a goal to reach its objectives and key results. Each key result has means of verification, and team initiatives show how the work is delivered.</p>
         </div>
         <button className="primary" type="button" onClick={addGoal}><Plus size={16} /> Strategic goal</button>
       </div>
@@ -392,6 +413,9 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
         onProgress={(id, progress) => actions.saveVerification(id, progress)}
         onAddVerification={actions.addVerification}
         onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })}
+        onSaveMean={actions.saveKrMean}
+        onAddMean={actions.addKrMean}
+        onRemoveMean={actions.deleteKrMean}
       />
     </section>
   );
@@ -403,7 +427,7 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
     if (filters.year !== 'all' && objective.year !== filters.year) return false;
     if (filters.status !== 'all' && objective.status !== filters.status) return false;
     if (!involvesDivision(objective, filters.division, filters.role)) return false;
-    const haystack = `${objective.code} ${objective.title} ${objective.division?.name} ${objective.goal?.title} ${objective.supporting.map(division => division.name).join(' ')} ${objective.keyResults.map(item => item.title).join(' ')}`.toLowerCase();
+    const haystack = `${objective.code} ${objective.title} ${objective.division?.name} ${objective.goal?.title} ${objective.supporting.map(division => division.name).join(' ')} ${objective.keyResults.map(item => `${item.title} ${(item.means || []).map(mean => mean.title).join(' ')}`).join(' ')}`.toLowerCase();
     return haystack.includes(filters.q.toLowerCase());
   }).sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
   const active = ['pillar', 'division', 'status', 'year'].filter(key => filters[key] !== 'all').length + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
@@ -413,7 +437,7 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
         <div>
           <div className="eyebrow">ANNUAL OBJECTIVES</div>
           <h1>Objectives</h1>
-          <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from initiatives.</p>
+          <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
         </div>
         <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
       </div>
@@ -551,11 +575,11 @@ function AlignmentPage({ view, actions, onManage }) {
         <div>
           <div className="eyebrow">ALIGNMENT</div>
           <h1>From priority to proof</h1>
-          <p>Open a priority area, then a goal, then an objective. Each initiative shows who executes it and the means of verification that prove it is done.</p>
+          <p>Open a priority area, then a goal, then an objective. Means of verification are recorded on each key result. Initiatives show who executes the work.</p>
         </div>
         <div className="year-switch">{['all', '2025', '2026', '2027'].map(item => <button key={item} type="button" className={year === item ? 'active' : ''} onClick={() => setYear(item)}>{item === 'all' ? 'All years' : item}</button>)}</div>
       </div>
-      <AlignmentTree pillars={view.pillars} year={year} onManage={onManage} onProgress={(id, progress) => actions.saveVerification(id, progress)} onAddVerification={actions.addVerification} onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })} />
+      <AlignmentTree pillars={view.pillars} year={year} onManage={onManage} onProgress={(id, progress) => actions.saveVerification(id, progress)} onAddVerification={actions.addVerification} onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })} onSaveMean={actions.saveKrMean} onAddMean={actions.addKrMean} onRemoveMean={actions.deleteKrMean} />
     </section>
   );
 }
@@ -596,12 +620,13 @@ function ReportsPage({ view, onOpen }) {
   const rows = view.objectives.filter(objective => (pillar === 'all' || objective.pillar?.id === pillar) && (year === 'all' || objective.year === year));
   const goals = view.goals.filter(goal => pillar === 'all' || goal.pillarId === pillar);
   const exportCsv = () => {
-    const header = ['Priority area', 'Goal', 'Horizon', 'Objective', 'Year', 'Responsible division', 'Supporting divisions', 'Progress', 'Status', 'Key results', 'Key result progress', 'Q1', 'Q2', 'Q3', 'Q4', 'Initiative', 'Executing division', 'Cross division', 'External system', 'External key', 'Means of verification', 'Verification progress'];
+    const header = ['Priority area', 'Goal', 'Horizon', 'Objective', 'Year', 'Responsible division', 'Supporting divisions', 'Progress', 'Status', 'Key results', 'Key result progress', 'Key result means of verification', 'Q1', 'Q2', 'Q3', 'Q4', 'Initiative', 'Executing division', 'Cross division', 'External system', 'External key', 'Initiative verification', 'Initiative verification progress'];
     const lines = [header];
     rows.forEach(objective => {
       const keyResultTitles = objective.keyResults.map((item, index) => `KR${index + 1}: ${item.title}`).join(' | ');
       const keyResultProgress = objective.keyResults.map(item => item.progress).join(' | ');
-      const base = [objective.pillar?.name, `${objective.goal?.code} ${objective.goal?.title}`, `${objective.goal?.horizonYears}-year`, `${objective.code} ${objective.title}`, objective.year, objective.division?.name, objective.supporting.map(division => division.name).join('; '), objective.progress, objective.status, keyResultTitles, keyResultProgress, objective.quarters?.Q1?.progress, objective.quarters?.Q2?.progress, objective.quarters?.Q3?.progress, objective.quarters?.Q4?.progress];
+      const keyResultMeans = objective.keyResults.map((item, index) => `KR${index + 1}: ${(item.means || []).map(mean => mean.title).filter(Boolean).join('; ')}`).join(' | ');
+      const base = [objective.pillar?.name, `${objective.goal?.code} ${objective.goal?.title}`, `${objective.goal?.horizonYears}-year`, `${objective.code} ${objective.title}`, objective.year, objective.division?.name, objective.supporting.map(division => division.name).join('; '), objective.progress, objective.status, keyResultTitles, keyResultProgress, keyResultMeans, objective.quarters?.Q1?.progress, objective.quarters?.Q2?.progress, objective.quarters?.Q3?.progress, objective.quarters?.Q4?.progress];
       if (!objective.initiatives.length) lines.push([...base, '', '', '', '', '', '', '']);
       objective.initiatives.forEach(initiative => {
         const initiativeCells = [initiative.title, initiative.division?.name, initiative.crossDivision ? 'Yes' : 'No', initiative.external?.system || '', initiative.external?.key || ''];
@@ -623,7 +648,7 @@ function ReportsPage({ view, onOpen }) {
         <div>
           <div className="eyebrow">REPORT</div>
           <h1>Strategy report</h1>
-          <p>A slice of the plan for leadership review. The export keeps every objective, its key results, each initiative, and each means of verification.</p>
+          <p>A slice of the plan for leadership review. The export keeps every objective, its key results, the means of verification on each key result, and each initiative.</p>
         </div>
         <div className="hero-actions">
           <button type="button" className="secondary" onClick={() => window.print()}><Printer size={16} /> Print</button>

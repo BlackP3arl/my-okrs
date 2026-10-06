@@ -3,7 +3,7 @@ import { initialCompany, initialGoals, initialProfile, teamColors } from './work
 export const CURRENT_YEAR = 2026;
 export const CURRENT_QUARTER = 'Q4';
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
-export const STORAGE_KEY = 'strategy-plan-v3';
+export const STORAGE_KEY = 'strategy-plan-v4';
 export const KEY_RESULT_MIN = 3;
 export const KEY_RESULT_MAX = 4;
 
@@ -280,6 +280,42 @@ function keyResultRecords(objectiveId, titles, target) {
   }));
 }
 
+function evidenceSentence(title) {
+  return `Quarterly review accepts evidence that: ${title}`;
+}
+
+function krMeanRecords(keyResults, sourceTitles) {
+  const used = new Set(keyResults.map(item => item.title));
+  const extras = sourceTitles.map(title => String(title).trim()).filter(title => title && !used.has(title));
+  const means = [];
+  keyResults.forEach((keyResult, index) => {
+    const statements = [keyResult.title];
+    statements.push(extras[index] || evidenceSentence(keyResult.title));
+    statements.forEach((title, movIndex) => {
+      means.push({
+        id: `${keyResult.id}-mov-${movIndex + 1}`,
+        keyResultId: keyResult.id,
+        title,
+      });
+    });
+  });
+  extras.slice(keyResults.length).forEach((title, index) => {
+    const keyResult = keyResults[index % keyResults.length];
+    const count = means.filter(item => item.keyResultId === keyResult.id).length + 1;
+    means.push({
+      id: `${keyResult.id}-mov-${count}`,
+      keyResultId: keyResult.id,
+      title,
+    });
+  });
+  return means;
+}
+
+function meansForRemainingKeyResults(means, keyResults) {
+  const ids = new Set((keyResults || []).map(item => item.id));
+  return (means || []).filter(item => ids.has(item.keyResultId));
+}
+
 function makeInitiative({ id, objectiveId, title, divisionId, technical, movTitles, target }) {
   const progresses = spread(target, movTitles.length, id);
   return {
@@ -391,6 +427,7 @@ export function buildSeed() {
   const initiatives = [];
   const verifications = [];
   const keyResults = [];
+  const krMeans = [];
 
   initialGoals.forEach(record => {
     const parsed = splitCode(record.title);
@@ -428,7 +465,9 @@ export function buildSeed() {
     objective.quarters = quarterSnapshots(objective.target, year, objective.code || objective.id);
     const sourceTitles = (record.keyResults || []).map(item => item.title);
     const parts = initiativesFor(objective, sourceTitles, divisionIdByName);
-    keyResults.push(...keyResultRecords(objective.id, sourceTitles, objective.target));
+    const records = keyResultRecords(objective.id, sourceTitles, objective.target);
+    keyResults.push(...records);
+    krMeans.push(...krMeanRecords(records, sourceTitles));
     objectives.push({
       id: objective.id,
       goalId: objective.goalId,
@@ -450,6 +489,7 @@ export function buildSeed() {
   const example = crmExample(divisionIdByName);
   objectives.push(example.objective);
   keyResults.push(...example.keyResults);
+  krMeans.push(...krMeanRecords(example.keyResults, example.keyResults.map(item => item.title)));
   example.parts.forEach(part => {
     initiatives.push(part.initiative);
     verifications.push(...part.verifications);
@@ -461,6 +501,7 @@ export function buildSeed() {
     goals,
     objectives,
     keyResults,
+    krMeans,
     initiatives,
     verifications,
     company: { ...initialCompany, name: 'Maldives Pension Office', tagline: 'Secure Your Tomorrow' },
@@ -472,7 +513,7 @@ export function loadState() {
   if (typeof localStorage === 'undefined') return buildSeed();
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.pillars?.length && saved?.goals?.length && saved?.objectives?.length && saved?.keyResults?.length) return saved;
+    if (saved?.pillars?.length && saved?.goals?.length && saved?.objectives?.length && saved?.keyResults?.length && Array.isArray(saved.krMeans)) return saved;
   } catch {
     /* use the sample plan */
   }
@@ -490,6 +531,7 @@ export function decorate(state) {
   const pillarById = Object.fromEntries(state.pillars.map(pillar => [pillar.id, pillar]));
   const verificationsByInitiative = group(state.verifications, 'initiativeId');
   const keyResultsByObjective = group(state.keyResults || [], 'objectiveId');
+  const meansByKeyResult = group(state.krMeans || [], 'keyResultId');
 
   const initiatives = state.initiatives.map(initiative => {
     const movs = (verificationsByInitiative[initiative.id] || []).map(item => ({
@@ -522,7 +564,10 @@ export function decorate(state) {
   const initiativesByObjective = group(initiatives, 'objectiveId');
   const objectives = state.objectives.map(objective => {
     const children = initiativesByObjective[objective.id] || [];
-    const keyResults = keyResultsByObjective[objective.id] || [];
+    const keyResults = (keyResultsByObjective[objective.id] || []).map(item => ({
+      ...item,
+      means: meansByKeyResult[item.id] || [],
+    }));
     const progress = keyResults.length ? average(keyResults.map(item => item.progress)) : average(children.map(item => item.progress));
     const goal = goalById[objective.goalId];
     const pillar = goal ? pillarById[goal.pillarId] : null;
@@ -626,11 +671,13 @@ export function involvesDivision(objective, divisionId, role) {
 export function removeGoal(state, goalId) {
   const objectiveIds = new Set(state.objectives.filter(item => item.goalId === goalId).map(item => item.id));
   const initiativeIds = new Set(state.initiatives.filter(item => objectiveIds.has(item.objectiveId)).map(item => item.id));
+  const keyResults = (state.keyResults || []).filter(item => !objectiveIds.has(item.objectiveId));
   return {
     ...state,
     goals: state.goals.filter(item => item.id !== goalId),
     objectives: state.objectives.filter(item => item.goalId !== goalId),
-    keyResults: (state.keyResults || []).filter(item => !objectiveIds.has(item.objectiveId)),
+    keyResults,
+    krMeans: meansForRemainingKeyResults(state.krMeans, keyResults),
     initiatives: state.initiatives.filter(item => !objectiveIds.has(item.objectiveId)),
     verifications: state.verifications.filter(item => !initiativeIds.has(item.initiativeId)),
   };
@@ -638,10 +685,12 @@ export function removeGoal(state, goalId) {
 
 export function removeObjective(state, objectiveId) {
   const initiativeIds = new Set(state.initiatives.filter(item => item.objectiveId === objectiveId).map(item => item.id));
+  const keyResults = (state.keyResults || []).filter(item => item.objectiveId !== objectiveId);
   return {
     ...state,
     objectives: state.objectives.filter(item => item.id !== objectiveId),
-    keyResults: (state.keyResults || []).filter(item => item.objectiveId !== objectiveId),
+    keyResults,
+    krMeans: meansForRemainingKeyResults(state.krMeans, keyResults),
     initiatives: state.initiatives.filter(item => item.objectiveId !== objectiveId),
     verifications: state.verifications.filter(item => !initiativeIds.has(item.initiativeId)),
   };
