@@ -3,7 +3,7 @@ import { QUARTERS, STATUS_TONE } from './model.js';
 
 export function Progress({ value, compact }) {
   const score = Math.max(0, Math.min(100, Math.round(value || 0)));
-  const color = score >= 70 ? '#168463' : score >= 45 ? '#c66a1d' : score > 0 ? '#d4534a' : '#c5c7ce';
+  const color = score > 0 ? '#010670' : '#D5D8E6';
   return (
     <div className={`progress ${compact ? 'compact' : ''}`}>
       <div><i style={{ width: `${score}%`, background: color }} /></div>
@@ -16,10 +16,10 @@ export function Status({ value }) {
   return <span className={`status ${STATUS_TONE[value] || 'gray'}`}><i />{value}</span>;
 }
 
-export function Ring({ value, color = '#5d45d8', label }) {
+export function Ring({ value, color = '#010670', label }) {
   const score = Math.max(0, Math.min(100, Math.round(value || 0)));
   return (
-    <div className="ring" style={{ background: `conic-gradient(${color} ${score * 3.6}deg, #e7e8ec 0)` }} aria-label={label || `${score}%`}>
+    <div className="ring" style={{ background: `conic-gradient(${color} ${score * 3.6}deg, #E6E7F4 0)` }} aria-label={label || `${score}%`}>
       <div><b>{score}%</b></div>
     </div>
   );
@@ -41,7 +41,7 @@ export function QuarterPips({ quarters, year, currentYear, currentQuarter }) {
       {QUARTERS.map(quarter => {
         const reported = quarters?.[quarter]?.progress || 0;
         const current = String(year) === String(currentYear) && quarter === currentQuarter;
-        const color = reported >= 70 ? '#168463' : reported >= 45 ? '#c66a1d' : reported > 0 ? '#d4534a' : '#d5d7de';
+        const color = reported >= 70 ? '#010670' : reported >= 45 ? '#4B56F9' : reported > 0 ? '#EA4927' : '#D5D8E6';
         return (
           <span key={quarter} className={current ? 'current' : ''} title={`${quarter} reported ${reported}%`}>
             <b><i style={{ height: `${reported}%`, background: color }} /></b>

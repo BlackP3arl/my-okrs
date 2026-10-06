@@ -3,7 +3,7 @@ import { initialCompany, initialGoals, initialProfile, teamColors } from './work
 export const CURRENT_YEAR = 2026;
 export const CURRENT_QUARTER = 'Q4';
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
-export const STORAGE_KEY = 'strategy-plan-v1';
+export const STORAGE_KEY = 'strategy-plan-v2';
 
 export const STATUS_TONE = {
   Achieved: 'green',
@@ -34,32 +34,32 @@ export const PILLARS = [
     code: '1',
     name: 'Community and Member-Centric Service',
     intent: 'Service quality, public trust, and inclusive participation in the pension system.',
-    color: '#5d45d8',
-    soft: '#eeeafd',
+    color: '#010670',
+    soft: '#E6E7F4',
   },
   {
     id: 'pa2',
     code: '2',
     name: 'Optimise and Innovate Solutions',
     intent: 'Platforms, automation, and shared services that raise quality for members and partners.',
-    color: '#1d6fb8',
-    soft: '#e7f2ff',
+    color: '#4B56F9',
+    soft: '#EEEEFE',
   },
   {
     id: 'pa3',
     code: '3',
     name: 'Pension Sustainability',
     intent: 'A resilient fund, wider investment choice, and a stronger social-protection design.',
-    color: '#b45309',
-    soft: '#fff4e5',
+    color: '#010670',
+    soft: '#F9E9CD',
   },
   {
     id: 'pa4',
     code: '4',
     name: 'Organizational Development and Resilience',
     intent: 'Governance, people, security, and the operating environment that keep the office dependable.',
-    color: '#0f766e',
-    soft: '#e5f6f3',
+    color: '#2430B0',
+    soft: '#E8EAFC',
   },
 ];
 
@@ -233,10 +233,22 @@ export function blankQuarters() {
   return { Q1: { progress: 0, note: '' }, Q2: { progress: 0, note: '' }, Q3: { progress: 0, note: '' }, Q4: { progress: 0, note: '' } };
 }
 
+const DIVISION_TONES = [
+  ['#010670', '#E6E7F4'],
+  ['#4B56F9', '#EEEEFE'],
+  ['#1C2A8A', '#E7E9F6'],
+  ['#303FCF', '#E8EAFF'],
+  ['#0B3A82', '#E5EEF8'],
+  ['#2436C8', '#E9EBFD'],
+];
+
 export function buildDivisions() {
   return Object.entries(teamColors)
     .filter(([name]) => name !== 'Pension Office')
-    .map(([name, tone]) => ({ id: slug(name), name, color: tone.color, soft: tone.soft }));
+    .map(([name], index) => {
+      const [color, soft] = DIVISION_TONES[index % DIVISION_TONES.length];
+      return { id: slug(name), name, color, soft };
+    });
 }
 
 function makeInitiative({ id, objectiveId, title, divisionId, technical, movTitles, target }) {
@@ -411,7 +423,7 @@ export function buildSeed() {
     objectives,
     initiatives,
     verifications,
-    company: { ...initialCompany, tagline: 'Strategy execution' },
+    company: { ...initialCompany, name: 'Maldives Pension Office', tagline: 'Secure Your Tomorrow' },
     profile: { ...initialProfile, role: 'Strategy Office', title: 'Strategic performance' },
   };
 }

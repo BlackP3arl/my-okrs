@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Building2, CalendarRange, ChevronRight, Compass, Download, FileText, Filter, GitBranch,
+  Building2, CalendarRange, ChevronRight, Download, FileText, Filter, GitBranch,
   LayoutDashboard, Menu, Plus, Printer, Rocket, Search, Settings, Target, X,
 } from 'lucide-react';
 import {
@@ -148,7 +148,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar open={sidebar} page={page} go={go} close={() => setSidebar(false)} company={state.company} profile={state.profile} reviewsDue={view.org.reviewsDue} />
+      <Sidebar open={sidebar} page={page} go={go} close={() => setSidebar(false)} profile={state.profile} reviewsDue={view.org.reviewsDue} />
       <main className="main">
         <header className="topbar">
           <button className="mobile-menu icon-button" type="button" onClick={() => setSidebar(true)} aria-label="Open menu"><Menu size={20} /></button>
@@ -183,12 +183,11 @@ export default function App() {
   );
 }
 
-function Sidebar({ open, page, go, close, company, profile, reviewsDue }) {
+function Sidebar({ open, page, go, close, profile, reviewsDue }) {
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand">
-        <div className="brand-mark"><Compass size={20} /></div>
-        <div><b>{company.name}</b><span>{company.tagline || 'Strategy'}</span></div>
+        <img className="brand-logo" src="/brand/mpao-logo-white.png" alt="Maldives Pension Office" />
         <button className="mobile-close" type="button" onClick={close} aria-label="Close menu"><X size={18} /></button>
       </div>
       <nav>
@@ -208,6 +207,7 @@ function Sidebar({ open, page, go, close, company, profile, reviewsDue }) {
         <b>How the plan links</b>
         <p>Priority areas hold the strategic goals. Divisions set objectives. Team initiatives, and their means of verification, connect those objectives to projects tracked outside this system.</p>
       </div>
+      <img className="sidebar-forward" src="/brand/mpao-forward-white.png" alt="" />
       <div className="sidebar-foot">
         <button type="button" className={page === 'Settings' ? 'active' : ''} onClick={() => go('Settings')}><Settings size={18} />Settings</button>
         <div className="profile"><div className="avatar">{initials(profile.name)}</div><div><b>{profile.name}</b><span>{profile.role}</span></div></div>
