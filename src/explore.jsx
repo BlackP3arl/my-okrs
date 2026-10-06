@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, X } from 'lucide-react';
-import { CURRENT_QUARTER, CURRENT_YEAR, QUARTERS, blankQuarters, uid } from './model.js';
+import { CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, QUARTERS, blankQuarters, uid } from './model.js';
 import { DivisionTag, Empty, Field, Horizon, Modal, Progress, QuarterPips, Status } from './ui.jsx';
 
 function MovEditor({ mov, onProgress, onDelete }) {
@@ -16,6 +16,24 @@ function MovEditor({ mov, onProgress, onDelete }) {
         {onDelete && <button type="button" className="delete-small" onClick={() => onDelete(mov.id)} aria-label="Remove means of verification"><Trash2 size={14} /></button>}
       </div>
     </div>
+  );
+}
+
+function KeyResultList({ keyResults, onProgress }) {
+  return (
+    <section className="kr-block">
+      <div className="section-head"><b>Key results</b><span>{keyResults.length} results score this objective</span></div>
+      {keyResults.map((item, index) => (
+        <div className="kr-row" key={item.id}>
+          <span className="kr-code">KR{index + 1}</span>
+          <b>{item.title}</b>
+          <div className="mov-score">
+            <input aria-label={`Progress for ${item.title}`} type="range" min="0" max="100" value={item.progress} onChange={event => onProgress(item.id, Number(event.target.value))} />
+            <strong>{item.progress}%</strong>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -60,7 +78,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
   );
 }
 
-export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification }) {
+export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onKeyResult }) {
   return (
     <article className={`objective-card ${open ? 'open' : ''}`} id={`objective-${objective.id}`}>
       <button type="button" className="objective-main" onClick={onToggle}>
@@ -75,6 +93,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
           <div className="chip-line">
             <DivisionTag division={objective.division} compact />
             {objective.supporting.length > 0 && <small>{objective.supporting.length} supporting</small>}
+            <small>{objective.keyResults.length} key results</small>
             <small>{objective.initiatives.length} initiatives</small>
           </div>
         </div>
@@ -94,6 +113,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
               </div>
             </div>
           </div>
+          <KeyResultList keyResults={objective.keyResults} onProgress={onKeyResult} />
           {objective.initiatives.map(initiative => (
             <InitiativePanel key={initiative.id} initiative={initiative} onProgress={onProgress} onAdd={onAddVerification} />
           ))}
@@ -106,7 +126,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
   );
 }
 
-export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification }) {
+export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification, onKeyResult }) {
   const objectives = goal.objectives.filter(item => year === 'all' || item.year === year);
   return (
     <div className="cascade-list">
@@ -119,6 +139,7 @@ export function GoalCascade({ goal, year, openObjective, setOpenObjective, onMan
           onManage={() => onManage(objective.id)}
           onProgress={onProgress}
           onAddVerification={onAddVerification}
+          onKeyResult={onKeyResult}
         />
       ))}
       {!objectives.length && <Empty title="No objectives in this year" detail="Add an objective for the selected year, or choose another year." />}
@@ -184,12 +205,16 @@ export function ObjectiveModal({ goals, divisions, presetGoalId, onClose, onSave
     divisionId: divisions[0]?.id || '',
     supportingIds: [],
     aspirational: false,
+    keyResults: ['', '', ''],
   });
   const set = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }));
   const grouped = useMemo(() => goals.slice().sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true })), [goals]);
+  const setKeyResult = (index, title) => setForm(current => ({ ...current, keyResults: current.keyResults.map((item, itemIndex) => itemIndex === index ? title : item) }));
+  const titles = form.keyResults.map(title => title.trim());
+  const keyResultsReady = titles.length >= KEY_RESULT_MIN && titles.length <= KEY_RESULT_MAX && titles.every(Boolean);
   return (
-    <Modal eyebrow="NEW OBJECTIVE" title="Add an objective" subtitle="A division owns the objective for a plan year. Supporting divisions can contribute, and the work is delivered through team initiatives." onClose={onClose}>
-      <form onSubmit={event => { event.preventDefault(); if (!form.title.trim() || !form.goalId || !form.divisionId) return; onSave({ ...form, title: form.title.trim(), description: form.description.trim(), quarters: blankQuarters() }); }}>
+    <Modal eyebrow="NEW OBJECTIVE" title="Add an objective" subtitle="A division owns the objective for a plan year, with three or four key results. Supporting divisions can contribute, and the work is delivered through team initiatives." onClose={onClose}>
+      <form onSubmit={event => { event.preventDefault(); if (!form.title.trim() || !form.goalId || !form.divisionId || !keyResultsReady) return; onSave({ ...form, title: form.title.trim(), description: form.description.trim(), keyResults: titles, quarters: blankQuarters() }); }}>
         <Field label="Strategic goal" full>
           <select name="goalId" value={form.goalId} onChange={set}>{grouped.map(goal => <option key={goal.id} value={goal.id}>{goal.code} · {goal.title}</option>)}</select>
         </Field>
@@ -198,6 +223,21 @@ export function ObjectiveModal({ goals, divisions, presetGoalId, onClose, onSave
         <Field label="Year"><select name="year" value={form.year} onChange={set}>{['2025', '2026', '2027', '2028', '2029', '2030'].map(year => <option key={year}>{year}</option>)}</select></Field>
         <Field label="Responsible division"><select name="divisionId" value={form.divisionId} onChange={set}>{divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}</select></Field>
         <div className="full picker-field"><span>Supporting divisions</span><DivisionButtons divisions={divisions.filter(division => division.id !== form.divisionId)} selected={form.supportingIds} onChange={supportingIds => setForm(current => ({ ...current, supportingIds }))} /></div>
+        <div className="full kr-fields">
+          <span>Key results</span>
+          {form.keyResults.map((title, index) => (
+            <label key={index}>
+              <em>KR{index + 1}</em>
+              <input required value={title} onChange={event => setKeyResult(index, event.target.value)} placeholder="Measurable result for this objective" />
+              {form.keyResults.length > KEY_RESULT_MIN && (
+                <button type="button" className="delete-small" aria-label={`Remove KR${index + 1}`} onClick={() => setForm(current => ({ ...current, keyResults: current.keyResults.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={14} /></button>
+              )}
+            </label>
+          ))}
+          {form.keyResults.length < KEY_RESULT_MAX && (
+            <button type="button" className="secondary" onClick={() => setForm(current => ({ ...current, keyResults: [...current.keyResults, ''] }))}><Plus size={14} /> Fourth key result</button>
+          )}
+        </div>
         <label className="check-line full"><input type="checkbox" checked={form.aspirational} onChange={event => setForm(current => ({ ...current, aspirational: event.target.checked }))} /><span>Aspirational objective</span></label>
         <div className="form-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" type="submit"><Plus size={16} /> Create objective</button></div>
       </form>
@@ -269,7 +309,25 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
         </form>
 
         <section className="drawer-section">
-          <div className="section-head"><div><b>Quarterly reviews</b><span>Reported progress for {objective.year}. The live score still rolls up from means of verification.</span></div></div>
+          <div className="section-head"><div><b>Key results</b><span>Three or four measurable results. Their average is this objective’s progress.</span></div></div>
+          <div className="kr-edit">
+            {objective.keyResults.map((item, index) => (
+              <div className="kr-edit-row" key={item.id}>
+                <span className="kr-code">KR{index + 1}</span>
+                <input aria-label={`KR${index + 1} title`} value={item.title} onChange={event => actions.saveKeyResult(item.id, { title: event.target.value })} />
+                <div className="mov-score">
+                  <input aria-label={`KR${index + 1} progress`} type="range" min="0" max="100" value={item.progress} onChange={event => actions.saveKeyResult(item.id, { progress: Number(event.target.value) })} />
+                  <strong>{item.progress}%</strong>
+                </div>
+                <button type="button" className="delete-small" disabled={objective.keyResults.length <= KEY_RESULT_MIN} aria-label={`Remove KR${index + 1}`} onClick={() => actions.deleteKeyResult(item.id)}><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {objective.keyResults.length < KEY_RESULT_MAX && <AddKeyResult onAdd={title => actions.addKeyResult(objective.id, title)} />}
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <div className="section-head"><div><b>Quarterly reviews</b><span>Reported progress for {objective.year}. The live score rolls up from the key results.</span></div></div>
           <div className="quarter-edit">
             {QUARTERS.map(quarter => {
               const report = objective.quarters?.[quarter] || { progress: 0, note: '' };
@@ -327,6 +385,16 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
   );
 }
 
+function AddKeyResult({ onAdd }) {
+  const [title, setTitle] = useState('');
+  return (
+    <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!title.trim()) return; onAdd(title.trim()); setTitle(''); }}>
+      <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a fourth key result" />
+      <button type="submit"><Plus size={14} /> Add</button>
+    </form>
+  );
+}
+
 function AddMov({ onAdd }) {
   const [title, setTitle] = useState('');
   return (
@@ -337,7 +405,7 @@ function AddMov({ onAdd }) {
   );
 }
 
-export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onManage }) {
+export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onManage, onKeyResult }) {
   const [openGoal, setOpenGoal] = useState(null);
   const [openObjective, setOpenObjective] = useState(null);
   return (
@@ -372,6 +440,7 @@ export function AlignmentTree({ pillars, year, onProgress, onAddVerification, on
                     onManage={() => onManage(objective.id)}
                     onProgress={onProgress}
                     onAddVerification={onAddVerification}
+                    onKeyResult={onKeyResult}
                   />
                 ))}
                 {open && !objectives.length && <Empty title="No objectives for this year" detail="Change the year filter to see the rest of the goal." />}

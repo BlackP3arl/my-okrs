@@ -3,7 +3,9 @@ import { initialCompany, initialGoals, initialProfile, teamColors } from './work
 export const CURRENT_YEAR = 2026;
 export const CURRENT_QUARTER = 'Q4';
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
-export const STORAGE_KEY = 'strategy-plan-v2';
+export const STORAGE_KEY = 'strategy-plan-v3';
+export const KEY_RESULT_MIN = 3;
+export const KEY_RESULT_MAX = 4;
 
 export const STATUS_TONE = {
   Achieved: 'green',
@@ -251,6 +253,33 @@ export function buildDivisions() {
     });
 }
 
+function headlineKeyResults(titles) {
+  const clean = titles.map(title => String(title).trim()).filter(Boolean);
+  if (clean.length > KEY_RESULT_MAX) return clean.slice(0, KEY_RESULT_MAX);
+  const padded = [...clean];
+  const fillers = [
+    'Responsible division confirms the annual outcome against the approved work plan.',
+    'Evidence for this objective is reviewed and accepted in the quarterly cycle.',
+  ];
+  let index = 0;
+  while (padded.length < KEY_RESULT_MIN) {
+    padded.push(fillers[index] || fillers[0]);
+    index += 1;
+  }
+  return padded;
+}
+
+function keyResultRecords(objectiveId, titles, target) {
+  const selected = headlineKeyResults(titles);
+  const progresses = spread(target, selected.length, `${objectiveId}:kr`);
+  return selected.map((title, index) => ({
+    id: `${objectiveId}-kr${index + 1}`,
+    objectiveId,
+    title,
+    progress: progresses[index] ?? 0,
+  }));
+}
+
 function makeInitiative({ id, objectiveId, title, divisionId, technical, movTitles, target }) {
   const progresses = spread(target, movTitles.length, id);
   return {
@@ -319,6 +348,12 @@ function crmExample(divisionIdByName) {
     aspirational: false,
     quarters: quarterSnapshots(62, '2026', '2.2.j'),
   };
+  const keyResults = keyResultRecords(objectiveId, [
+    'Pension service journeys are managed from one member record.',
+    'Service teams use the CRM for day-to-day case handling.',
+    'Member and employer data needed for service is available in the CRM.',
+    'The CRM is live on the channels pension services use with members.',
+  ], 62);
   const business = makeInitiative({
     id: 'init-crm-service',
     objectiveId,
@@ -345,7 +380,7 @@ function crmExample(divisionIdByName) {
     ],
     target: 54,
   });
-  return { objective, parts: [business, technology] };
+  return { objective, keyResults, parts: [business, technology] };
 }
 
 export function buildSeed() {
@@ -355,6 +390,7 @@ export function buildSeed() {
   const objectives = [];
   const initiatives = [];
   const verifications = [];
+  const keyResults = [];
 
   initialGoals.forEach(record => {
     const parsed = splitCode(record.title);
@@ -390,7 +426,9 @@ export function buildSeed() {
       target: targetFor(record.id, year),
     };
     objective.quarters = quarterSnapshots(objective.target, year, objective.code || objective.id);
-    const parts = initiativesFor(objective, (record.keyResults || []).map(item => item.title), divisionIdByName);
+    const sourceTitles = (record.keyResults || []).map(item => item.title);
+    const parts = initiativesFor(objective, sourceTitles, divisionIdByName);
+    keyResults.push(...keyResultRecords(objective.id, sourceTitles, objective.target));
     objectives.push({
       id: objective.id,
       goalId: objective.goalId,
@@ -411,6 +449,7 @@ export function buildSeed() {
 
   const example = crmExample(divisionIdByName);
   objectives.push(example.objective);
+  keyResults.push(...example.keyResults);
   example.parts.forEach(part => {
     initiatives.push(part.initiative);
     verifications.push(...part.verifications);
@@ -421,6 +460,7 @@ export function buildSeed() {
     divisions,
     goals,
     objectives,
+    keyResults,
     initiatives,
     verifications,
     company: { ...initialCompany, name: 'Maldives Pension Office', tagline: 'Secure Your Tomorrow' },
@@ -432,7 +472,7 @@ export function loadState() {
   if (typeof localStorage === 'undefined') return buildSeed();
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.pillars?.length && saved?.goals?.length && saved?.objectives?.length) return saved;
+    if (saved?.pillars?.length && saved?.goals?.length && saved?.objectives?.length && saved?.keyResults?.length) return saved;
   } catch {
     /* use the sample plan */
   }
@@ -449,6 +489,7 @@ export function decorate(state) {
   const goalById = Object.fromEntries(state.goals.map(goal => [goal.id, goal]));
   const pillarById = Object.fromEntries(state.pillars.map(pillar => [pillar.id, pillar]));
   const verificationsByInitiative = group(state.verifications, 'initiativeId');
+  const keyResultsByObjective = group(state.keyResults || [], 'objectiveId');
 
   const initiatives = state.initiatives.map(initiative => {
     const movs = (verificationsByInitiative[initiative.id] || []).map(item => ({
@@ -481,13 +522,15 @@ export function decorate(state) {
   const initiativesByObjective = group(initiatives, 'objectiveId');
   const objectives = state.objectives.map(objective => {
     const children = initiativesByObjective[objective.id] || [];
-    const progress = average(children.map(item => item.progress));
+    const keyResults = keyResultsByObjective[objective.id] || [];
+    const progress = keyResults.length ? average(keyResults.map(item => item.progress)) : average(children.map(item => item.progress));
     const goal = goalById[objective.goalId];
     const pillar = goal ? pillarById[goal.pillarId] : null;
     return {
       ...objective,
       progress,
       status: objectiveStatus(progress, objective.year),
+      keyResults,
       initiatives: children,
       division: divisionById[objective.divisionId] || { id: objective.divisionId, name: 'Unassigned', color: '#64748b', soft: '#f1f5f9' },
       supporting: (objective.supportingIds || []).map(id => divisionById[id]).filter(Boolean),
@@ -560,6 +603,7 @@ export function decorate(state) {
       goals: goals.length,
       objectives: objectives.length,
       initiatives: initiatives.length,
+      keyResults: (state.keyResults || []).length,
       verifications: state.verifications.length,
       onTrack: goals.filter(goal => goal.status === 'On track' || goal.status === 'Achieved').length,
       cross: initiatives.filter(item => item.crossDivision).length,
@@ -586,6 +630,7 @@ export function removeGoal(state, goalId) {
     ...state,
     goals: state.goals.filter(item => item.id !== goalId),
     objectives: state.objectives.filter(item => item.goalId !== goalId),
+    keyResults: (state.keyResults || []).filter(item => !objectiveIds.has(item.objectiveId)),
     initiatives: state.initiatives.filter(item => !objectiveIds.has(item.objectiveId)),
     verifications: state.verifications.filter(item => !initiativeIds.has(item.initiativeId)),
   };
@@ -596,6 +641,7 @@ export function removeObjective(state, objectiveId) {
   return {
     ...state,
     objectives: state.objectives.filter(item => item.id !== objectiveId),
+    keyResults: (state.keyResults || []).filter(item => item.objectiveId !== objectiveId),
     initiatives: state.initiatives.filter(item => item.objectiveId !== objectiveId),
     verifications: state.verifications.filter(item => !initiativeIds.has(item.initiativeId)),
   };
