@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import {
   Building2, CalendarRange, ChevronRight, Download, FileText, Filter, GitBranch,
   LayoutDashboard, Menu, Plus, Printer, Rocket, Search, Settings, Target, X,
 } from 'lucide-react';
 import {
-  CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, STORAGE_KEY, blankQuarters, buildSeed, clamp, decorate,
-  involvesDivision, loadState, removeGoal, removeInitiative, removeObjective, saveState, uid,
+  CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
+  involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
 } from './model.js';
+import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
 import { DivisionTag, Empty, Field, Horizon, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
 
@@ -58,7 +59,8 @@ function cleanExternal(external) {
 }
 
 export default function App() {
-  const [state, setState] = useState(loadState);
+  const initialPlan = use(getPlanPromise());
+  const [state, setState] = useState(initialPlan);
   const [page, setPage] = useState('Strategy');
   const [goalId, setGoalId] = useState(null);
   const [focusObjective, setFocusObjective] = useState(null);
@@ -71,7 +73,7 @@ export default function App() {
   const goal = view.goals.find(item => item.id === goalId) || null;
   const objective = view.objectives.find(item => item.id === objectiveId) || null;
 
-  useEffect(() => saveState(state), [state]);
+  useEffect(() => { persistPlan(state); }, [state]);
   useEffect(() => { document.title = `${state.company.name} · Strategy`; }, [state.company.name]);
 
   const go = next => { setPage(next); setSidebar(false); };
@@ -692,7 +694,7 @@ function SettingsPage({ state, setState }) {
         <div>
           <div className="eyebrow">SETTINGS</div>
           <h1>Workspace</h1>
-          <p>The sample plan is stored in this browser. Restoring it replaces any goals, objectives, and reviews you have edited.</p>
+          <p>{planUsesDatabase() ? 'The strategy plan is stored in the Cloudflare database for this site. Restoring the sample replaces that shared plan.' : 'The sample plan is stored in this browser. Restoring it replaces any goals, objectives, and reviews you have edited.'}</p>
         </div>
         {note && <div className="settings-saved">{note}</div>}
       </div>
@@ -719,7 +721,7 @@ function SettingsPage({ state, setState }) {
           <b>Restore the sample plan</b>
           <p>Brings back the Pension Office priority areas, strategic goals, objectives, key results, initiatives, and means of verification.</p>
         </div>
-        <button type="button" className="secondary" onClick={() => { if (window.confirm('Replace the current plan with the sample strategy?')) { localStorage.removeItem(STORAGE_KEY); setState(buildSeed()); flash('Sample plan restored'); } }}>Restore sample plan</button>
+        <button type="button" className="secondary" onClick={() => { if (window.confirm('Replace the current plan with the sample strategy?')) { resetPlan().then(seed => { setState(seed); flash('Sample plan restored'); }).catch(() => flash('Could not restore the plan')); } }}>Restore sample plan</button>
       </article>
     </section>
   );
