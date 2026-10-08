@@ -1,207 +1,732 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDownUp, BarChart3, Bell, Building2, CalendarDays, Camera, Check,
-  ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Compass, Filter,
-  Flag, GitBranch, Home, LayoutDashboard, List, Menu, MessageSquare, MoreHorizontal, Pencil,
-  PieChart, Plus, Printer, Save, Search, Settings, Sparkles, Target, Trash2, TrendingUp, TreePine, Upload, UserPlus, Users, X, Zap, Download, FileText
+  Building2, CalendarRange, ChevronRight, Download, FileText, Filter, GitBranch,
+  LayoutDashboard, Menu, Plus, Printer, Rocket, Search, Settings, Target, X,
 } from 'lucide-react';
 import {
-  divisions, teamColors as teams, initialCompany, initialProfile, initialCycles,
-  initialTeams, initialMembers, initialGoals
-} from './workplan';
+  CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
+  involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
+} from './model.js';
+import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
+import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
+import { DivisionTag, Empty, Field, Horizon, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
 
-const STORAGE_KEY = 'northstar-okr-data-v2';
-const CHECKIN_KEY = 'northstar-okr-checkins-v2';
-const TEAMS_KEY = 'northstar-okr-teams-v2';
-const CYCLES_KEY = 'northstar-okr-cycles-v2';
-const MEMBERS_KEY = 'northstar-okr-members-v2';
-const PROFILE_KEY = 'northstar-okr-profile-v2';
-const COMPANY_KEY = 'northstar-okr-company-v2';
-const statusTone={'On track':'green','At risk':'amber','Off track':'red','Not started':'gray'};
-const navItems=[{icon:Home,label:'Home'},{icon:Target,label:'Goals'},{icon:Activity,label:'Check-ins'},{icon:BarChart3,label:'Insights'}];
-const uid=prefix=>`${prefix}${Date.now()}${Math.random().toString(16).slice(2,6)}`;
-const initials=name=>name.split(' ').filter(Boolean).map(x=>x[0]).join('').slice(0,2).toUpperCase();
-const health=p=>p>=60?'On track':p>=40?'At risk':'Off track';
-const loadStore=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))||fallback}catch{return fallback}};
-function readImage(file,max=320){return new Promise((resolve,reject)=>{if(!file||!file.type.startsWith('image/'))return reject(new Error('Please choose an image file.'));if(file.size>4*1024*1024)return reject(new Error('Image must be under 4MB.'));const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{const scale=Math.min(1,max/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);resolve(canvas.toDataURL('image/png'))};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not read that image.'))};img.src=url})}
-function persistStore(key,value,label){try{localStorage.setItem(key,JSON.stringify(value))}catch{window.alert(`Could not save ${label}. Try a smaller image.`)}}
-function migrate(raw){return (raw||initialGoals).map((g,i)=>({...g,division:g.division||divisions[i%divisions.length],keyResults:(g.keyResults||[]).map((k,j)=>({...k,id:k.id||`kr${i}${j}`})),initiatives:(g.initiatives||[]).map((x,j)=>typeof x==='string'?{id:`in${i}${j}`,title:x,status:j%2?'Planned':'In progress',owner:''}:{...x,id:x.id||`in${i}${j}`,owner:x.owner||''})}))}
+const NAV = [
+  ['Strategy', LayoutDashboard],
+  ['Objectives', Target],
+  ['Initiatives', Rocket],
+  ['Reviews', CalendarRange],
+  ['Alignment', GitBranch],
+];
+const WORKSPACE = [
+  ['Divisions', Building2],
+  ['Reports', FileText],
+];
+const STATUSES = ['Achieved', 'On track', 'At risk', 'Off track', 'Not started'];
+const INIT_STATUSES = ['Done', 'In progress', 'Blocked', 'Not started'];
+const YEARS = ['2025', '2026', '2027', '2028', '2029', '2030'];
 
-function App(){
-  const [goals,setGoals]=useState(()=>{try{return migrate(JSON.parse(localStorage.getItem(STORAGE_KEY)))}catch{return initialGoals}});
-  const [checkins,setCheckins]=useState(()=>{try{return JSON.parse(localStorage.getItem(CHECKIN_KEY))||[]}catch{return []}});
-  const [teamData,setTeamData]=useState(()=>{try{return JSON.parse(localStorage.getItem(TEAMS_KEY))||initialTeams}catch{return initialTeams}});
-  const [cycles,setCycles]=useState(()=>{try{return JSON.parse(localStorage.getItem(CYCLES_KEY))||initialCycles}catch{return initialCycles}});
-  const [members,setMembers]=useState(()=>loadStore(MEMBERS_KEY,initialMembers));
-  const [profile,setProfile]=useState(()=>loadStore(PROFILE_KEY,initialProfile));
-  const [company,setCompany]=useState(()=>loadStore(COMPANY_KEY,initialCompany));
-  const [page,setPage]=useState('Goals'),[selected,setSelected]=useState(null),[modal,setModal]=useState(false),[sidebar,setSidebar]=useState(false);
-  useEffect(()=>localStorage.setItem(STORAGE_KEY,JSON.stringify(goals)),[goals]);
-  useEffect(()=>localStorage.setItem(CHECKIN_KEY,JSON.stringify(checkins)),[checkins]);
-  useEffect(()=>localStorage.setItem(TEAMS_KEY,JSON.stringify(teamData)),[teamData]);
-  useEffect(()=>localStorage.setItem(CYCLES_KEY,JSON.stringify(cycles)),[cycles]);
-  useEffect(()=>localStorage.setItem(MEMBERS_KEY,JSON.stringify(members)),[members]);
-  useEffect(()=>persistStore(PROFILE_KEY,profile,'your profile'),[profile]);
-  useEffect(()=>persistStore(COMPANY_KEY,company,'company settings'),[company]);
-  useEffect(()=>{document.title=`${company.name} OKRs`},[company.name]);
-  const renamePerson=(from,to)=>{if(!from||from===to)return;setTeamData(ts=>ts.map(t=>({...t,lead:t.lead===from?to:t.lead,members:t.members.map(x=>x===from?to:x)})));setGoals(gs=>gs.map(g=>({...g,owner:g.owner===from?to:g.owner,initials:g.owner===from?initials(to):g.initials,initiatives:g.initiatives.map(x=>({...x,owner:x.owner===from?to:x.owner}))})))};
-  const saveProfile=next=>{const prev=profile;setProfile(next);setMembers(ms=>{const match=ms.find(m=>m.name===prev.name)||ms.find(m=>m.email===prev.email);if(!match)return [...ms,{id:uid('member'),name:next.name,email:next.email,role:next.role,status:'Active'}];return ms.map(m=>m.id===match.id?{...m,name:next.name,email:next.email,role:next.role||m.role}:m)});if(prev.name!==next.name)renamePerson(prev.name,next.name)};
-  const updateGoal=(id,data)=>setGoals(gs=>gs.map(g=>g.id===id?{...g,...data,initials:data.owner?initials(data.owner):g.initials,updated:'Just now'}:g));
-  const addGoal=form=>{const id=uid('g');setGoals(gs=>[...gs,{...form,id,initials:initials(form.owner),progress:Number(form.progress),parentId:form.parentId||null,updated:'Just now',keyResults:form.keyResult?[{id:uid('kr'),title:form.keyResult,value:Number(form.progress)}]:[],initiatives:form.initiatives.split('\n').filter(Boolean).map(title=>({id:uid('in'),title,status:'Planned'}))}]);setModal(false);setSelected(id)};
-  const deleteGoal=id=>{if(!window.confirm('Delete this objective? Its aligned goals will move to company level.'))return;setGoals(gs=>gs.filter(g=>g.id!==id).map(g=>g.parentId===id?{...g,parentId:null}:g));setCheckins(cs=>cs.filter(c=>c.goalId!==id));setSelected(null)};
-  const addCheckin=data=>{const entry={...data,id:uid('ci'),createdAt:new Date().toISOString()};setCheckins(cs=>[entry,...cs]);updateGoal(data.goalId,{progress:Number(data.progress),status:data.status});};
-  const go=next=>{if(next==='Home')next='Goals';setPage(next);setSidebar(false)};
-  return <div className="app-shell"><Sidebar open={sidebar} close={()=>setSidebar(false)} count={goals.length} page={page} go={go} profile={profile} company={company}/><main className="main">
-    <header className="topbar"><button className="mobile-menu icon-button" onClick={()=>setSidebar(true)}><Menu size={20}/></button><div className="crumb"><span>Strategy</span><ChevronRight size={14}/><strong>{page}</strong></div><div className="top-actions"><button className="icon-button"><Search size={19}/></button><button className="icon-button notification"><Bell size={19}/><i/></button><Avatar person={profile} onClick={()=>go('Settings')}/></div></header>
-    {page==='Goals'&&<GoalsPage goals={goals} teamNames={teamData.map(t=>t.name)} cycles={cycles} setModal={setModal} setSelected={setSelected}/>} 
-    {page==='Check-ins'&&<CheckinsPage goals={goals} checkins={checkins} add={addCheckin} remove={id=>setCheckins(cs=>cs.filter(c=>c.id!==id))}/>} 
-    {page==='Insights'&&<InsightsPage goals={goals} checkins={checkins} cycles={cycles} openGoal={id=>{setSelected(id);setPage('Goals')}}/>}
-    {page==='Teams'&&<TeamsPage teams={teamData} members={members} goals={goals} save={setTeamData} rename={(from,to,division)=>setGoals(gs=>gs.map(g=>g.team===from?{...g,team:to,division}:g))}/>}
-    {page==='Members'&&<MembersPage members={members} teams={teamData} goals={goals} save={setMembers} rename={(from,to)=>{renamePerson(from,to);setProfile(p=>p.name===from?{...p,name:to}:p)}} syncProfile={(oldMember,next)=>setProfile(p=>(p.name===oldMember.name||p.email===oldMember.email)?{...p,name:next.name,email:next.email,role:next.role||p.role}:p)}/>}
-    {page==='Cycles'&&<CyclesPage cycles={cycles} goals={goals} save={setCycles} rename={(from,to)=>setGoals(gs=>gs.map(g=>g.period===from?{...g,period:to}:g))}/>}
-    {page==='Reports'&&<ReportsPage goals={goals} checkins={checkins} teams={teamData} cycles={cycles} openGoal={id=>{setSelected(id);setPage('Goals')}}/>}
-    {page==='Settings'&&<SettingsPage profile={profile} company={company} saveProfile={saveProfile} saveCompany={setCompany}/>}
-  </main>{modal&&<GoalModal goals={goals} members={members} teamNames={teamData.map(t=>t.name)} cycles={cycles} close={()=>setModal(false)} save={addGoal}/>} {selected&&goals.some(g=>g.id===selected)&&<GoalDrawer goal={goals.find(g=>g.id===selected)} goals={goals} members={members} teamNames={teamData.map(t=>t.name)} cycles={cycles} close={()=>setSelected(null)} update={updateGoal} remove={deleteGoal}/>}</div>
-}
-function GoalsPage({goals,teamNames,cycles,setModal,setSelected}){
-  const parentIds=useMemo(()=>goals.filter(g=>!g.parentId).map(g=>g.id),[goals]);
-  const [view,setView]=useState('Cascade'),[query,setQuery]=useState(''),[teamFilter,setTeamFilter]=useState('All teams'),[divisionFilter,setDivisionFilter]=useState('All divisions'),[expanded,setExpanded]=useState(()=>new Set(parentIds));
-  const visible=useMemo(()=>goals.filter(g=>(teamFilter==='All teams'||g.team===teamFilter)&&(divisionFilter==='All divisions'||g.division===divisionFilter)&&(`${g.title} ${g.owner} ${g.team} ${g.division}`).toLowerCase().includes(query.toLowerCase())),[goals,query,teamFilter,divisionFilter]);
-  const avg=Math.round(goals.reduce((a,g)=>a+g.progress,0)/(goals.length||1)),onTrack=goals.filter(g=>g.status==='On track').length;
-  const activeCycle=cycles.find(c=>c.status==='Active')||cycles[0];
-  const daysLeft=activeCycle?Math.max(0,Math.ceil((new Date(activeCycle.end+'T00:00')-new Date())/86400000)):0;
-  const cycleEnd=activeCycle?new Date(activeCycle.end+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-  const toggle=id=>setExpanded(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n});
-  return <section className="content"><div className="hero"><div><div className="eyebrow"><Sparkles size={14}/> STRATEGY EXECUTION</div><h1>Goals Explorer</h1><p>See how every team’s work connects to what matters most.</p></div><button className="primary" onClick={()=>setModal(true)}><Plus size={18}/> New goal</button></div>
-    <div className="metrics"><Metric icon={Target} label="Active goals" value={goals.length} detail={`Across ${new Set(goals.map(g=>g.division)).size} divisions`} tone="violet"/><Metric icon={Activity} label="Average progress" value={`${avg}%`} detail="Live OKR score" tone="blue"/><Metric icon={Check} label="On track" value={`${onTrack}/${goals.length}`} detail={`${Math.round(onTrack/(goals.length||1)*100)}% healthy`} tone="green"/><Metric icon={Clock3} label="Cycle remaining" value={`${daysLeft} days`} detail={cycleEnd?`Ends ${cycleEnd}`:activeCycle?.name||''} tone="orange"/></div>
-    <div className="workspace"><div className="workspace-head"><div className="view-tabs">{[[GitBranch,'Cascade'],[TreePine,'Tree'],[List,'List']].map(([Icon,name])=><button key={name} className={view===name?'active':''} onClick={()=>setView(name)}><Icon size={17}/>{name}</button>)}</div><div className="period"><button className="icon-button"><ChevronLeft size={17}/></button><CalendarDays size={16}/><b>{activeCycle?.name||'2026'}</b><button className="icon-button"><ChevronRight size={17}/></button></div></div>
-      <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search goals, owners, teams, or divisions..."/>{query&&<button onClick={()=>setQuery('')}><X size={15}/></button>}</div><div className="toolbar-right"><FilterSelect icon={Users} value={teamFilter} set={setTeamFilter} first="All teams" options={teamNames}/><FilterSelect icon={Building2} value={divisionFilter} set={setDivisionFilter} first="All divisions" options={divisions}/><button className="filter-button"><Filter size={16}/> Filters <span>{Number(teamFilter!=='All teams')+Number(divisionFilter!=='All divisions')}</span></button><button className="icon-button"><ArrowDownUp size={17}/></button></div></div>
-      {view==='Cascade'&&<Cascade goals={visible} expanded={expanded} toggle={toggle} select={setSelected}/>} {view==='Tree'&&<TreeView goals={visible} select={setSelected}/>} {view==='List'&&<ListView goals={visible} select={setSelected}/>} 
-    </div></section>
-}
-function FilterSelect({icon:Icon,value,set,first,options}){return <label className="select-wrap"><Icon size={16}/><select value={value} onChange={e=>set(e.target.value)}><option>{first}</option>{options.map(x=><option key={x}>{x}</option>)}</select><ChevronDown size={14}/></label>}
-function Sidebar({open,close,count,page,go,profile,company}){return <><aside className={`sidebar ${open?'open':''}`}><div className="brand">{company.logo?<div className="brand-mark has-logo"><img src={company.logo} alt=""/></div>:<div className="brand-mark"><Compass size={21}/></div>}<div><b>{company.name}</b><span>{company.tagline||'OKR workspace'}</span></div><button className="mobile-close" onClick={close}><X/></button></div><nav>{navItems.map(({icon:Icon,label})=><button key={label} className={page===label?'active':''} onClick={()=>go(label)}><Icon size={19}/><span>{label}</span>{label==='Goals'&&<em>{count}</em>}</button>)}</nav><div className="nav-label">WORKSPACE</div><nav>{[[Building2,'Teams'],[UserPlus,'Members'],[CalendarDays,'Cycles'],[LayoutDashboard,'Reports']].map(([Icon,label])=><button key={label} className={page===label?'active':''} onClick={()=>go(label)}><Icon size={19}/><span>{label}</span></button>)}</nav><div className="sidebar-card"><div className="card-icon"><Zap size={17}/></div><b>Annual Work Plan</b><p>2026 execution is underway. Keep every objective current as the year closes.</p><button onClick={()=>go('Check-ins')}>Review check-ins</button></div><div className="sidebar-foot"><button><CircleHelp size={19}/>Help & resources</button><button className={page==='Settings'?'active':''} onClick={()=>go('Settings')}><Settings size={19}/>Settings</button><div className="profile" onClick={()=>go('Settings')} role="button" tabIndex={0} onKeyDown={e=>e.key==='Enter'&&go('Settings')}><Avatar person={profile}/><div><b>{profile.name}</b><span>{profile.title||profile.role}</span></div><MoreHorizontal size={18}/></div></div></aside>{open&&<div className="scrim" onClick={close}/>}</>}
-function Avatar({person,onClick}){const content=person?.photo?<img src={person.photo} alt=""/>:initials(person?.name||'?');return onClick?<button type="button" className="avatar" onClick={onClick} title="Open settings">{content}</button>:<div className="avatar">{content}</div>}
-function Metric({icon:Icon,label,value,detail,tone}){return <article className="metric"><div className={`metric-icon ${tone}`}><Icon size={19}/></div><div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div></article>}
-function Cascade({goals,expanded,toggle,select}){const roots=goals.filter(g=>!g.parentId||!goals.some(x=>x.id===g.parentId)),children=id=>goals.filter(g=>g.parentId===id),rows=[];roots.forEach(root=>{rows.push({g:root,level:0});if(expanded.has(root.id))children(root.id).forEach(c=>rows.push({g:c,level:1}))});return <div className="cascade table-scroll"><div className="cascade-grid header-row"><div>Name</div><div>Team</div><div>Owner</div><div>Division</div><div>Progress</div><div>Status</div><div/></div>{rows.map(({g,level})=>{const kids=children(g.id);return <div className={`cascade-grid data-row level-${level}`} key={g.id} onClick={()=>select(g.id)}><div className="goal-name" style={{paddingLeft:level*34+18}}>{kids.length?<button onClick={e=>{e.stopPropagation();toggle(g.id)}}>{expanded.has(g.id)?<ChevronDown/>:<ChevronRight/>}</button>:<span className="row-spacer"/>}<div className={`type-icon ${level?'objective':'parent'}`}>{level?<Target size={15}/>:<Flag size={15}/>}</div><div><b>{g.title}</b><small>{level?`${g.keyResults.length} key results · ${g.initiatives.length} initiatives`:`${kids.length} aligned objective${kids.length!==1?'s':''}`}</small></div></div><div><TeamPill team={g.team}/></div><div><Owner goal={g}/></div><div><Division value={g.division}/></div><div><Progress value={g.progress}/></div><div><Status value={g.status}/></div><div><Pencil size={15}/></div></div>})}{!rows.length&&<Empty/>}<button className="add-inline" onClick={()=>document.querySelector('.primary').click()}><Plus size={16}/> Add goal</button></div>}
-function TreeView({goals,select}){const roots=goals.filter(g=>!g.parentId||!goals.some(x=>x.id===g.parentId));return <div className="tree-view"><div className="tree-intro"><GitBranch size={18}/><div><b>Alignment map</b><span>Follow the line from company strategy to team execution.</span></div></div><div className="tree-canvas">{roots.map(root=><div className="tree-branch" key={root.id}><GoalCard goal={root} select={select} parent/>{goals.filter(g=>g.parentId===root.id).length>0&&<div className="tree-children">{goals.filter(g=>g.parentId===root.id).map(g=><GoalCard key={g.id} goal={g} select={select}/>)}</div>}</div>)}</div>{!roots.length&&<Empty/>}</div>}
-function GoalCard({goal,select,parent}){return <button className={`goal-card ${parent?'parent':''}`} onClick={()=>select(goal.id)}><div className="goal-card-top"><TeamPill team={goal.team}/><Division value={goal.division}/></div><h3>{goal.title}</h3><p>{goal.description}</p><div className="goal-card-bottom"><Owner goal={goal} compact/><Progress value={goal.progress} compact/></div></button>}
-function ListView({goals,select}){return <div className="list-view"><div className="list-header"><span>Objective</span><span>Owner</span><span>Division</span><span>Cycle</span><span>Progress</span><span>Status</span></div>{goals.map(g=><button className="list-row" key={g.id} onClick={()=>select(g.id)}><div className="list-objective"><div className="type-icon objective"><Target size={15}/></div><div><b>{g.title}</b><small>{g.keyResults.length} key results · {g.initiatives.length} initiatives · Updated {g.updated}</small></div></div><Owner goal={g}/><Division value={g.division}/><span className="cycle">{g.period}</span><Progress value={g.progress}/><Status value={g.status}/></button>)}{!goals.length&&<Empty/>}</div>}
-function TeamPill({team}){const t=teams[team]||{color:'#6046db',soft:'#eeeafd'};return <span className="team-pill" style={{color:t.color,background:t.soft}}><i style={{background:t.color}}/>{team}</span>}
-function Division({value}){return <span className="division-pill"><Building2 size={13}/>{value}</span>}
-function Owner({goal,compact}){return <span className={`owner ${compact?'compact':''}`}><i>{goal.initials}</i>{!compact&&goal.owner}</span>}
-function Progress({value,compact}){const color=value>=60?'#25a77c':value>=40?'#e7a52b':'#e05a47';return <div className={`progress ${compact?'compact':''}`}><div><i style={{width:`${value}%`,background:color}}/></div><b>{value}%</b></div>}
-function Status({value}){return <span className={`status ${statusTone[value]}`}><i/>{value}</span>}
-function Empty(){return <div className="empty"><Search size={26}/><b>No goals found</b><span>Try adjusting your search or filters.</span></div>}
+const blankObjectives = { q: '', pillar: 'all', division: 'all', role: 'any', status: 'all', year: 'all' };
+const blankInitiatives = { q: '', pillar: 'all', division: 'all', status: 'all', year: 'all', cross: false };
 
-function CheckinsPage({goals,checkins,add,remove}){
-  const [open,setOpen]=useState(false),[query,setQuery]=useState(''),[division,setDivision]=useState('All divisions');
-  const due=goals.filter(g=>!checkins.some(c=>c.goalId===g.id&&Date.now()-new Date(c.createdAt).getTime()<7*86400000));
-  const visible=checkins.filter(c=>{const g=goals.find(x=>x.id===c.goalId);return g&&(division==='All divisions'||g.division===division)&&(`${g.title} ${g.owner} ${c.note||''}`).toLowerCase().includes(query.toLowerCase())});
-  return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><Activity size={14}/> WEEKLY CADENCE</div><h1>Check-ins</h1><p>Keep objectives current with focused, lightweight progress updates.</p></div><button className="primary" onClick={()=>setOpen(true)}><Plus size={18}/> New check-in</button></div>
-    <div className="metrics"><Metric icon={MessageSquare} label="Total check-ins" value={checkins.length} detail="This OKR cycle" tone="violet"/><Metric icon={Clock3} label="Updates due" value={due.length} detail="No update in 7 days" tone="orange"/><Metric icon={Check} label="Updated this week" value={goals.length-due.length} detail={`Of ${goals.length} objectives`} tone="green"/><Metric icon={TrendingUp} label="Avg. confidence" value={`${Math.round(checkins.reduce((a,c)=>a+Number(c.confidence||0),0)/(checkins.length||1))}/5`} detail="Owner-reported" tone="blue"/></div>
-    <div className="checkin-layout"><section className="module-card due-card"><div className="module-card-head"><div><b>Needs an update</b><span>Objectives without a recent check-in</span></div><span className="count-badge">{due.length}</span></div>{due.length?due.slice(0,5).map(g=><button className="due-row" key={g.id} onClick={()=>setOpen(g.id)}><div className="type-icon objective"><Target size={15}/></div><div><b>{g.title}</b><span>{g.owner} · {g.division}</span></div><Status value={g.status}/></button>):<div className="all-current"><Check size={22}/><b>Everything is current</b><span>Your team is up to date.</span></div>}</section>
-      <section className="module-card history-card"><div className="module-card-head"><div><b>Check-in history</b><span>Latest updates across the organization</span></div><div className="history-filters"><div className="searchbox small"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search updates..."/></div><FilterSelect icon={Building2} value={division} set={setDivision} first="All divisions" options={divisions}/></div></div>{visible.length?<div className="checkin-feed">{visible.map(c=>{const g=goals.find(x=>x.id===c.goalId);return <article className="checkin-entry" key={c.id}><div className="entry-line"><Owner goal={g}/><span>{new Date(c.createdAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><button className="delete-small" onClick={()=>remove(c.id)}><Trash2 size={14}/></button></div><div className="entry-goal"><b>{g.title}</b><Status value={c.status}/></div><div className="entry-progress"><Progress value={Number(c.progress)}/><span>Confidence {c.confidence}/5</span></div>{c.note&&<p>{c.note}</p>}{c.blockers&&<div className="entry-callout"><AlertTriangle size={14}/><span><b>Blockers:</b> {c.blockers}</span></div>}{c.nextSteps&&<small><b>Next:</b> {c.nextSteps}</small>}</article>})}</div>:<div className="all-current"><MessageSquare size={22}/><b>No check-ins yet</b><span>Create the first update for this cycle.</span></div>}</section></div>
-    {open&&<CheckinModal goals={goals} initialGoal={typeof open==='string'?open:''} close={()=>setOpen(false)} save={data=>{add(data);setOpen(false)}}/>}
-  </section>
-}
-function CheckinModal({goals,initialGoal,close,save}){const first=goals.find(g=>g.id===(initialGoal||goals[0]?.id))||goals[0], [form,setForm]=useState({goalId:first?.id||'',progress:first?.progress||0,status:first?.status||'Not started',confidence:3,note:'',blockers:'',nextSteps:'',date:new Date().toISOString().slice(0,10)});const change=e=>{const next={...form,[e.target.name]:e.target.value};if(e.target.name==='goalId'){const g=goals.find(x=>x.id===e.target.value);next.progress=g.progress;next.status=g.status}setForm(next)};return <div className="modal-wrap"><div className="modal checkin-modal"><div className="modal-head"><div><span className="drawer-label"><Activity size={14}/> OKR CHECK-IN</span><h2>Share a progress update</h2><p>Keep the team aligned on progress, confidence, and what comes next.</p></div><button className="icon-button" onClick={close}><X/></button></div><form onSubmit={e=>{e.preventDefault();save({...form,progress:Number(form.progress),confidence:Number(form.confidence)})}}><Field label="Objective" full><select required name="goalId" value={form.goalId} onChange={change}>{goals.map(g=><option value={g.id} key={g.id}>{g.title}</option>)}</select></Field><Field label="Progress"><div className="range-field"><input type="range" min="0" max="100" name="progress" value={form.progress} onChange={change}/><b>{form.progress}%</b></div></Field><Field label="Health"><select name="status" value={form.status} onChange={change}>{Object.keys(statusTone).map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Confidence"><select name="confidence" value={form.confidence} onChange={change}><option value="1">1 · Very low</option><option value="2">2 · Low</option><option value="3">3 · Medium</option><option value="4">4 · High</option><option value="5">5 · Very high</option></select></Field><Field label="Check-in date"><input type="date" name="date" value={form.date} onChange={change}/></Field><Field label="What changed?" full><textarea required name="note" value={form.note} onChange={change} placeholder="Summarize progress, outcomes, and learnings..."/></Field><Field label="Blockers" full><textarea name="blockers" value={form.blockers} onChange={change} placeholder="What is slowing progress?"/></Field><Field label="Next steps" full><textarea name="nextSteps" value={form.nextSteps} onChange={change} placeholder="What will happen before the next check-in?"/></Field><div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" type="submit"><Check size={17}/> Publish check-in</button></div></form></div></div>}
-
-function InsightsPage({goals,checkins,cycles,openGoal}){
-  const avg=Math.round(goals.reduce((a,g)=>a+g.progress,0)/(goals.length||1)),healthy=goals.filter(g=>g.status==='On track').length,atRisk=goals.filter(g=>g.status!=='On track').sort((a,b)=>a.progress-b.progress);
-  const keyResults=goals.flatMap(g=>g.keyResults),initiatives=goals.flatMap(g=>g.initiatives),krAvg=Math.round(keyResults.reduce((a,k)=>a+k.value,0)/(keyResults.length||1));
-  const byDivision=divisions.map(name=>{const set=goals.filter(g=>g.division===name);return {name,count:set.length,progress:Math.round(set.reduce((a,g)=>a+g.progress,0)/(set.length||1)),healthy:set.filter(g=>g.status==='On track').length}}).filter(x=>x.count);
-  const distribution=[{label:'On track',value:healthy,color:'#25a77c'},{label:'At risk',value:goals.filter(g=>g.status==='At risk').length,color:'#e7a52b'},{label:'Off track',value:goals.filter(g=>g.status==='Off track').length,color:'#e05a47'},{label:'Not started',value:goals.filter(g=>g.status==='Not started').length,color:'#a6a9b0'}];
-  const activeCycle=cycles?.find(c=>c.status==='Active')||cycles?.[0];
-  return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><BarChart3 size={14}/> PORTFOLIO INTELLIGENCE</div><h1>Insights</h1><p>Understand execution health and focus attention where it creates the most impact.</p></div><div className="period insight-period"><CalendarDays size={16}/><b>{activeCycle?.name||'2026'}</b></div></div>
-    <div className="metrics"><Metric icon={Activity} label="Portfolio progress" value={`${avg}%`} detail={`${goals.length} active objectives`} tone="violet"/><Metric icon={PieChart} label="Healthy objectives" value={`${Math.round(healthy/(goals.length||1)*100)}%`} detail={`${healthy} currently on track`} tone="green"/><Metric icon={Target} label="Key result score" value={`${krAvg}%`} detail={`${keyResults.length} measurable outcomes`} tone="blue"/><Metric icon={Zap} label="Active initiatives" value={initiatives.filter(x=>x.status==='In progress').length} detail={`${initiatives.length} total initiatives`} tone="orange"/></div>
-    <div className="insights-grid"><section className="module-card division-performance"><div className="module-card-head"><div><b>Division performance</b><span>Average objective progress by division</span></div><TrendingUp size={18}/></div><div className="division-bars">{byDivision.map(d=><div key={d.name}><div className="bar-label"><span>{d.name}</span><b>{d.progress}%</b></div><div className="big-bar"><i style={{width:`${d.progress}%`}}/></div><small>{d.healthy}/{d.count} objectives on track</small></div>)}</div></section>
-      <section className="module-card health-card"><div className="module-card-head"><div><b>Portfolio health</b><span>Status distribution</span></div><PieChart size={18}/></div><div className="health-donut" style={{background:`conic-gradient(${distribution.map((x,i)=>`${x.color} ${distribution.slice(0,i).reduce((a,v)=>a+v.value,0)/(goals.length||1)*100}% ${(distribution.slice(0,i).reduce((a,v)=>a+v.value,0)+x.value)/(goals.length||1)*100}%`).join(',')})`}}><div><b>{goals.length}</b><span>goals</span></div></div><div className="health-legend">{distribution.map(x=><div key={x.label}><i style={{background:x.color}}/><span>{x.label}</span><b>{x.value}</b></div>)}</div></section>
-      <section className="module-card focus-card"><div className="module-card-head"><div><b>Needs attention</b><span>Lowest-health objectives</span></div><AlertTriangle size={18}/></div><div className="focus-list">{atRisk.slice(0,5).map(g=><button key={g.id} onClick={()=>openGoal(g.id)}><div className="type-icon objective"><Target size={15}/></div><div><b>{g.title}</b><span>{g.division} · {g.owner}</span></div><Progress value={g.progress}/><Status value={g.status}/></button>)}</div></section>
-      <section className="module-card activity-card"><div className="module-card-head"><div><b>Execution activity</b><span>Check-in cadence across the portfolio</span></div><MessageSquare size={18}/></div><div className="activity-stat"><strong>{checkins.length}</strong><span>check-ins recorded this cycle</span></div><div className="activity-row"><span>Objectives updated</span><b>{new Set(checkins.map(c=>c.goalId)).size}/{goals.length}</b></div><div className="activity-row"><span>Average confidence</span><b>{(checkins.reduce((a,c)=>a+Number(c.confidence||0),0)/(checkins.length||1)).toFixed(1)}/5</b></div><div className="activity-row"><span>Completed initiatives</span><b>{initiatives.filter(x=>x.status==='Done').length}/{initiatives.length}</b></div></section>
-    </div></section>
+function initials(name) {
+  return String(name || '?').split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
-function MembersPage({members,teams:teamData,goals,save,rename,syncProfile}){const [editing,setEditing]=useState(null),[query,setQuery]=useState(''),blank={name:'',email:'',role:'',status:'Active'};const persist=form=>{if(form.id){const old=members.find(m=>m.id===form.id);save(ms=>ms.map(m=>m.id===form.id?form:m));if(old.name!==form.name)rename(old.name,form.name);syncProfile?.(old,form)}else save(ms=>[...ms,{...form,id:uid('member')}]);setEditing(null)};const remove=m=>{const references=[];if(teamData.some(t=>t.lead===m.name))references.push('team lead');if(teamData.some(t=>t.members.includes(m.name)))references.push('team member');if(goals.some(g=>g.owner===m.name))references.push('objective owner');if(goals.some(g=>g.initiatives.some(x=>x.owner===m.name)))references.push('initiative owner');if(references.length){window.alert(`${m.name} cannot be deleted while assigned as ${references.join(', ')}.`);return}if(window.confirm(`Delete ${m.name}?`))save(ms=>ms.filter(x=>x.id!==m.id))};const shown=members.filter(m=>`${m.name} ${m.email} ${m.role}`.toLowerCase().includes(query.toLowerCase()));return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><UserPlus size={14}/> PEOPLE DIRECTORY</div><h1>Members</h1><p>Manage the people who own objectives and deliver initiatives.</p></div><button className="primary" onClick={()=>setEditing(blank)}><UserPlus size={18}/> Add member</button></div><div className="metrics"><Metric icon={Users} label="Members" value={members.length} detail="Directory profiles" tone="violet"/><Metric icon={Check} label="Active" value={members.filter(m=>m.status==='Active').length} detail="Available for assignment" tone="green"/><Metric icon={Building2} label="On teams" value={members.filter(m=>teamData.some(t=>t.members.includes(m.name))).length} detail="Assigned contributors" tone="blue"/><Metric icon={Target} label="Goal owners" value={new Set(goals.map(g=>g.owner)).size} detail="Accountable owners" tone="orange"/></div><div className="member-toolbar module-card"><div className="searchbox"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search members, email, or role..."/></div></div><div className="member-grid">{shown.map(m=>{const assignedTeams=teamData.filter(t=>t.members.includes(m.name)||t.lead===m.name);return <article className="member-card" key={m.id}><div className="member-card-head"><div className="member-avatar">{initials(m.name)}</div><div><h3>{m.name}</h3><span>{m.email}</span></div><div className="card-menu"><button className="icon-button" onClick={()=>setEditing(m)}><Pencil size={15}/></button><button className="icon-button danger-icon" onClick={()=>remove(m)}><Trash2 size={15}/></button></div></div><p>{m.role||'No role specified'}</p><div className="member-card-meta"><span className={`member-status ${m.status.toLowerCase()}`}>{m.status}</span><span>{assignedTeams.map(t=>t.name).join(', ')||'No team'}</span></div></article>})}</div>{editing&&<MemberModal data={editing} close={()=>setEditing(null)} save={persist}/>}</section>}
-function MemberModal({data,close,save}){const [form,setForm]=useState(data),change=e=>setForm({...form,[e.target.name]:e.target.value});return <EditorModal eyebrow="MEMBER PROFILE" title={form.id?'Edit member':'Add a member'} subtitle="Create a reusable profile for team and ownership assignments." close={close} submit={e=>{e.preventDefault();save(form)}} action={form.id?'Save member':'Add member'}><Field label="Full name"><input required name="name" value={form.name} onChange={change}/></Field><Field label="Email"><input required type="email" name="email" value={form.email} onChange={change}/></Field><Field label="Role or title"><input name="role" value={form.role} onChange={change} placeholder="Product manager"/></Field><Field label="Status"><select name="status" value={form.status} onChange={change}><option>Active</option><option>Inactive</option></select></Field></EditorModal>}
-function TeamsPage({teams:teamData,members,goals,save,rename}){const [editing,setEditing]=useState(null),blank={name:'',division:divisions[0],lead:'',color:'#5d45d8',description:'',members:[]};const persist=form=>{if(form.id){const old=teamData.find(t=>t.id===form.id);save(ts=>ts.map(t=>t.id===form.id?form:t));if(old.name!==form.name||old.division!==form.division)rename(old.name,form.name,form.division)}else save(ts=>[...ts,{...form,id:uid('team')}]);setEditing(null)};const remove=t=>{if(goals.some(g=>g.team===t.name)){window.alert('Move or delete this team’s objectives before deleting the team.');return}if(window.confirm(`Delete ${t.name}?`))save(ts=>ts.filter(x=>x.id!==t.id))};return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><Users size={14}/> ORGANIZATION</div><h1>Teams</h1><p>Manage ownership, membership, and the groups executing your strategy.</p></div><button className="primary" onClick={()=>setEditing(blank)}><UserPlus size={18}/> New team</button></div><div className="metrics"><Metric icon={Users} label="Teams" value={teamData.length} detail="Active groups" tone="violet"/><Metric icon={Building2} label="Divisions" value={new Set(teamData.map(t=>t.division)).size} detail="Organization units" tone="blue"/><Metric icon={Target} label="Owned objectives" value={goals.length} detail="Across all teams" tone="green"/><Metric icon={UserPlus} label="Members" value={new Set(teamData.flatMap(t=>t.members)).size} detail="Unique contributors" tone="orange"/></div><div className="team-grid">{teamData.map(t=>{const owned=goals.filter(g=>g.team===t.name),avg=Math.round(owned.reduce((a,g)=>a+g.progress,0)/(owned.length||1));return <article className="team-card" key={t.id}><div className="team-card-top"><div className="team-avatar" style={{background:t.color}}>{t.name.slice(0,2).toUpperCase()}</div><div><h3>{t.name}</h3><span>{t.division}</span></div><div className="card-menu"><button className="icon-button" onClick={()=>setEditing(t)}><Pencil size={15}/></button><button className="icon-button danger-icon" onClick={()=>remove(t)}><Trash2 size={15}/></button></div></div><p className="team-description">{t.description}</p><div className="team-lead"><div className="mini-avatar">{initials(t.lead||'?')}</div><div><span>TEAM LEAD</span><b>{t.lead||'Unassigned'}</b></div></div><div className="team-stats"><div><span>Members</span><b>{t.members.length}</b></div><div><span>Objectives</span><b>{owned.length}</b></div><div><span>Progress</span><b>{avg}%</b><Progress value={avg}/></div></div></article>})}</div>{editing&&<TeamModal data={editing} members={members} close={()=>setEditing(null)} save={persist}/>}</section>}
-function TeamModal({data,members,close,save}){const [form,setForm]=useState({...data,members:data.members||[]}),change=e=>setForm({...form,[e.target.name]:e.target.value}),toggle=name=>setForm(f=>({...f,members:f.members.includes(name)?f.members.filter(x=>x!==name):[...f.members,name]}));const available=members.filter(m=>m.status==='Active'||form.members.includes(m.name)||form.lead===m.name);return <EditorModal eyebrow="TEAM SETUP" title={form.id?'Edit team':'Create a team'} subtitle="Choose leadership and members from your people directory." close={close} submit={e=>{e.preventDefault();save(form)}} action={form.id?'Save team':'Create team'}><Field label="Team name"><input required name="name" value={form.name} onChange={change}/></Field><Field label="Division"><select name="division" value={form.division} onChange={change}>{divisions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Team lead"><select name="lead" value={form.lead} onChange={change}><option value="">Unassigned</option>{available.map(m=><option key={m.id}>{m.name}</option>)}</select></Field><Field label="Color"><input type="color" name="color" value={form.color} onChange={change}/></Field><Field label="Description" full><textarea name="description" value={form.description} onChange={change}/></Field><Field label="Team members" full><div className="member-picker">{available.map(m=><label key={m.id} className={form.members.includes(m.name)?'selected':''}><input type="checkbox" checked={form.members.includes(m.name)} onChange={()=>toggle(m.name)}/><span className="mini-avatar">{initials(m.name)}</span><span><b>{m.name}</b><small>{m.role}</small></span></label>)}</div></Field></EditorModal>}
-function CyclesPage({cycles,goals,save,rename}){const [editing,setEditing]=useState(null),blank={name:'',start:'',end:'',status:'Planning',description:''};const persist=form=>{if(form.id){const old=cycles.find(c=>c.id===form.id);save(cs=>cs.map(c=>c.id===form.id?form:c));if(old.name!==form.name)rename(old.name,form.name)}else save(cs=>[...cs,{...form,id:uid('cy')}]);setEditing(null)};const remove=c=>{if(goals.some(g=>g.period===c.name)){window.alert('Move objectives to another cycle before deleting this cycle.');return}if(window.confirm(`Delete ${c.name}?`))save(cs=>cs.filter(x=>x.id!==c.id))};return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><CalendarDays size={14}/> PLANNING CADENCE</div><h1>Cycles</h1><p>Define planning periods and keep every objective on the right timeline.</p></div><button className="primary" onClick={()=>setEditing(blank)}><Plus size={18}/> New cycle</button></div><div className="cycle-list">{cycles.map(c=>{const set=goals.filter(g=>g.period===c.name),avg=Math.round(set.reduce((a,g)=>a+g.progress,0)/(set.length||1));return <article className="cycle-card" key={c.id}><div className="cycle-date"><CalendarDays size={19}/><span>{new Date(c.start+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><i/><span>{new Date(c.end+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</span></div><div className="cycle-main"><span className={`cycle-status ${c.status.toLowerCase()}`}>{c.status}</span><h3>{c.name}</h3><p>{c.description}</p></div><div className="cycle-progress"><Progress value={avg}/><span>{set.length} objectives · {set.filter(g=>g.status==='On track').length} on track</span></div><div className="card-menu"><button className="icon-button" onClick={()=>setEditing(c)}><Pencil size={16}/></button><button className="icon-button danger-icon" onClick={()=>remove(c)}><Trash2 size={16}/></button></div></article>})}</div>{editing&&<CycleModal data={editing} close={()=>setEditing(null)} save={persist}/>}</section>}
-function CycleModal({data,close,save}){const [form,setForm]=useState(data),change=e=>setForm({...form,[e.target.name]:e.target.value});return <EditorModal eyebrow="OKR CYCLE" title={form.id?'Edit cycle':'Create a cycle'} subtitle="Set the timeframe and planning status for objectives." close={close} submit={e=>{e.preventDefault();save(form)}} action={form.id?'Save cycle':'Create cycle'}><Field label="Cycle name" full><input required name="name" value={form.name} onChange={change} placeholder="Q1 2027"/></Field><Field label="Start date"><input required type="date" name="start" value={form.start} onChange={change}/></Field><Field label="End date"><input required type="date" name="end" value={form.end} onChange={change}/></Field><Field label="Status"><select name="status" value={form.status} onChange={change}><option>Planning</option><option>Active</option><option>Closed</option></select></Field><Field label="Description" full><textarea name="description" value={form.description} onChange={change}/></Field></EditorModal>}
-function ReportsPage({goals,checkins,teams:teamData,cycles,openGoal}){
-  const blank={cycle:'All cycles',team:'All teams',division:'All divisions',status:'All statuses',owner:'All owners'};
-  const [filters,setFilters]=useState(blank);
-  const change=e=>setFilters({...filters,[e.target.name]:e.target.value});
-  const owners=[...new Set(goals.map(g=>g.owner).filter(Boolean))];
-  const rows=goals.filter(g=>(filters.cycle==='All cycles'||g.period===filters.cycle)&&(filters.team==='All teams'||g.team===filters.team)&&(filters.division==='All divisions'||g.division===filters.division)&&(filters.status==='All statuses'||g.status===filters.status)&&(filters.owner==='All owners'||g.owner===filters.owner));
-  const avg=Math.round(rows.reduce((a,g)=>a+g.progress,0)/(rows.length||1)),kr=rows.flatMap(g=>g.keyResults),ins=rows.flatMap(g=>g.initiatives),onTrack=rows.filter(g=>g.status==='On track').length;
-  const activeFilters=Object.values(filters).filter(v=>!String(v).startsWith('All')).length;
-  const parentTitle=id=>goals.find(x=>x.id===id)?.title||'Company-level';
-  const relatedCheckins=id=>checkins.filter(c=>c.goalId===id);
-  const lastCheckin=id=>{const set=relatedCheckins(id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));return set[0]?new Date(set[0].createdAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—'};
-  const byTeam=teamData.map(t=>{const set=rows.filter(g=>g.team===t.name);return {name:t.name,count:set.length,progress:Math.round(set.reduce((a,g)=>a+g.progress,0)/(set.length||1)),healthy:set.filter(g=>g.status==='On track').length}}).filter(x=>x.count);
-  const distribution=[{label:'On track',value:onTrack,color:'#25a77c'},{label:'At risk',value:rows.filter(g=>g.status==='At risk').length,color:'#e7a52b'},{label:'Off track',value:rows.filter(g=>g.status==='Off track').length,color:'#e05a47'},{label:'Not started',value:rows.filter(g=>g.status==='Not started').length,color:'#a6a9b0'}];
-  const exportCsv=()=>{const esc=x=>`"${String(x??'').replaceAll('"','""')}"`,header=['Objective','Description','Team','Division','Owner','Cycle','Aligned to','Progress','Status','Key results','Initiatives','Check-ins','Last check-in'],data=rows.map(g=>[g.title,g.description,g.team,g.division,g.owner,g.period,parentTitle(g.parentId),g.progress,g.status,g.keyResults.map(k=>`${k.title} (${k.value}%)`).join('; '),g.initiatives.map(x=>`${x.title} (${x.status})`).join('; '),relatedCheckins(g.id).length,lastCheckin(g.id)]);const blob=new Blob([[header,...data].map(r=>r.map(esc).join(',')).join('\n')],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='pension-office-okr-report.csv';a.click();URL.revokeObjectURL(url)};
-  return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><FileText size={14}/> EXECUTIVE REPORTING</div><h1>Reports</h1><p>Build a focused portfolio report from live OKR and check-in data.</p></div><div className="report-actions"><button className="secondary" onClick={()=>window.print()}><Printer size={17}/> Print</button><button className="primary" onClick={exportCsv}><Download size={18}/> Export CSV</button></div></div>
-    <div className="report-filters module-card"><div className="module-card-head"><div><b>Report filters</b><span>Slice the portfolio by cycle, team, division, owner, or health.</span></div><button className="text-reset" disabled={!activeFilters} onClick={()=>setFilters(blank)}><X size={14}/> Reset{activeFilters?` (${activeFilters})`:''}</button></div><div className="report-filter-grid"><label><span>Cycle</span><select name="cycle" value={filters.cycle} onChange={change}><option>All cycles</option>{cycles.map(c=><option key={c.id}>{c.name}</option>)}</select></label><label><span>Team</span><select name="team" value={filters.team} onChange={change}><option>All teams</option>{teamData.map(t=><option key={t.id}>{t.name}</option>)}</select></label><label><span>Division</span><select name="division" value={filters.division} onChange={change}><option>All divisions</option>{divisions.map(x=><option key={x}>{x}</option>)}</select></label><label><span>Owner</span><select name="owner" value={filters.owner} onChange={change}><option>All owners</option>{owners.map(name=><option key={name}>{name}</option>)}</select></label><label><span>Status</span><select name="status" value={filters.status} onChange={change}><option>All statuses</option>{Object.keys(statusTone).map(x=><option key={x}>{x}</option>)}</select></label></div></div>
-    <div className="report-stamp"><span>Showing <b>{rows.length}</b> of {goals.length} objectives</span><span>{kr.length} key results · {ins.length} initiatives · {checkins.filter(c=>rows.some(g=>g.id===c.goalId)).length} check-ins</span><span>Generated {new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</span></div>
-    <div className="metrics report-metrics"><Metric icon={Target} label="Objectives" value={rows.length} detail="In this report" tone="violet"/><Metric icon={Activity} label="Average progress" value={`${avg}%`} detail="Portfolio score" tone="blue"/><Metric icon={Check} label="On track" value={onTrack} detail={`${rows.length?Math.round(onTrack/rows.length*100):0}% healthy`} tone="green"/><Metric icon={Zap} label="Execution scope" value={ins.filter(x=>x.status==='In progress').length} detail={`${kr.length} key results`} tone="orange"/></div>
-    <div className="report-layout"><div className="report-side"><section className="module-card health-card"><div className="module-card-head"><div><b>Report health</b><span>Status mix for this slice</span></div><PieChart size={18}/></div><div className="health-donut" style={{background:rows.length?`conic-gradient(${distribution.map((x,i)=>`${x.color} ${distribution.slice(0,i).reduce((a,v)=>a+v.value,0)/rows.length*100}% ${(distribution.slice(0,i).reduce((a,v)=>a+v.value,0)+x.value)/rows.length*100}%`).join(',')})`:'#eceef1'}}><div><b>{rows.length}</b><span>goals</span></div></div><div className="health-legend">{distribution.map(x=><div key={x.label}><i style={{background:x.color}}/><span>{x.label}</span><b>{x.value}</b></div>)}</div></section>
-        <section className="module-card"><div className="module-card-head"><div><b>Team contribution</b><span>Progress inside this report</span></div><Users size={18}/></div><div className="report-team-rows">{byTeam.length?byTeam.map(t=><div className="report-team-row" key={t.name}><div><b>{t.name}</b><span>{t.healthy}/{t.count} on track</span></div><div className="report-team-score"><b>{t.progress}%</b><Progress value={t.progress} compact/></div></div>):<div className="all-current compact"><span>No teams in this slice.</span></div>}</div></section></div>
-      <div className="report-table module-card"><div className="module-card-head"><div><b>Portfolio detail</b><span>Click an objective to open it in Goals.</span></div><Filter size={16}/></div><div className="report-table-scroll"><div className="report-row report-head"><span>Objective</span><span>Team / Division</span><span>Owner</span><span>Cycle</span><span>Progress</span><span>Execution</span><span>Status</span></div>{rows.map(g=><button className="report-row" key={g.id} onClick={()=>openGoal(g.id)}><div className="report-objective"><b>{g.title}</b><small>{parentTitle(g.parentId)} · Updated {g.updated}</small></div><div className="report-team"><TeamPill team={g.team}/><small>{g.division}</small></div><Owner goal={g}/><span className="report-cycle">{g.period}</span><Progress value={g.progress}/><div className="report-count"><b>{g.keyResults.length} KRs</b><small>{g.initiatives.length} initiatives · {relatedCheckins(g.id).length} check-ins</small></div><Status value={g.status}/></button>)}{!rows.length&&<div className="all-current"><FileText size={22}/><b>No report data</b><span>Adjust filters to include objectives.</span></div>}</div></div></div></section>;
+function nextGoalCode(goals, pillar) {
+  const numbers = goals.filter(goal => goal.pillarId === pillar.id).map(goal => Number(String(goal.code).split('.')[1]) || 0);
+  return `${pillar.code}.${Math.max(0, ...numbers) + 1}`;
 }
-function EditorModal({eyebrow,title,subtitle,close,submit,action,children}){return <div className="modal-wrap"><div className="modal"><div className="modal-head"><div><span className="drawer-label"><Sparkles size={14}/>{eyebrow}</span><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={close}><X/></button></div><form onSubmit={submit}>{children}<div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" type="submit"><Save size={17}/>{action}</button></div></form></div></div>}
 
-function GoalDrawer({goal,goals,members,teamNames,cycles,close,update,remove}){
-  const [editing,setEditing]=useState(false),[draft,setDraft]=useState({...goal}),[newKr,setNewKr]=useState(''),[newInitiative,setNewInitiative]=useState('');
-  const patch=(field,value)=>setDraft(d=>({...d,[field]:value}));
-  const saveGoal=()=>{update(goal.id,{...draft,progress:Number(draft.progress),parentId:draft.parentId||null,status:draft.status||health(Number(draft.progress))});setEditing(false)};
-  const updateKr=(id,data)=>update(goal.id,{keyResults:goal.keyResults.map(k=>k.id===id?{...k,...data}:k)}),deleteKr=id=>update(goal.id,{keyResults:goal.keyResults.filter(k=>k.id!==id)});
-  const addKr=()=>{if(!newKr.trim())return;update(goal.id,{keyResults:[...goal.keyResults,{id:uid('kr'),title:newKr.trim(),value:0}]});setNewKr('')};
-  const updateInitiative=(id,data)=>update(goal.id,{initiatives:goal.initiatives.map(x=>x.id===id?{...x,...data}:x)}),deleteInitiative=id=>update(goal.id,{initiatives:goal.initiatives.filter(x=>x.id!==id)});
-  const addInitiative=()=>{if(!newInitiative.trim())return;update(goal.id,{initiatives:[...goal.initiatives,{id:uid('in'),title:newInitiative.trim(),status:'Planned',owner:''}]});setNewInitiative('')};
-  return <><div className="drawer-scrim" onClick={close}/><aside className="drawer"><div className="drawer-head"><span className="drawer-label"><Target size={15}/> OBJECTIVE</span><div className="drawer-actions"><button className="icon-button danger-icon" title="Delete objective" onClick={()=>remove(goal.id)}><Trash2 size={17}/></button><button className="icon-button" title={editing?'Save':'Edit objective'} onClick={()=>{if(editing)saveGoal();else{setDraft({...goal});setEditing(true)}}}>{editing?<Save size={18}/>:<Pencil size={18}/>}</button><button className="icon-button" onClick={close}><X size={19}/></button></div></div>
-    {editing?<div className="drawer-edit"><Field label="Objective title" full><input value={draft.title} onChange={e=>patch('title',e.target.value)}/></Field><Field label="Description" full><textarea value={draft.description} onChange={e=>patch('description',e.target.value)}/></Field><Field label="Team"><select value={draft.team} onChange={e=>patch('team',e.target.value)}>{(teamNames||Object.keys(teams)).map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Division"><select value={draft.division} onChange={e=>patch('division',e.target.value)}>{divisions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Owner"><select value={draft.owner} onChange={e=>patch('owner',e.target.value)}><option value="">Unassigned</option>{members.filter(m=>m.status==='Active'||m.name===draft.owner).map(m=><option key={m.id}>{m.name}</option>)}</select></Field><Field label="Cycle"><select value={draft.period} onChange={e=>patch('period',e.target.value)}>{(cycles||[]).map(c=><option key={c.id}>{c.name}</option>)}</select></Field><Field label="Align to"><select value={draft.parentId||''} onChange={e=>patch('parentId',e.target.value)}><option value="">Company-level goal</option>{goals.filter(g=>g.id!==goal.id&&g.parentId!==goal.id).map(g=><option value={g.id} key={g.id}>{g.title}</option>)}</select></Field><Field label="Progress"><input type="number" min="0" max="100" value={draft.progress} onChange={e=>patch('progress',e.target.value)}/></Field><Field label="Health"><select value={draft.status} onChange={e=>patch('status',e.target.value)}>{Object.keys(statusTone).map(x=><option key={x}>{x}</option>)}</select></Field><div className="edit-actions"><button className="secondary" onClick={()=>{setDraft({...goal});setEditing(false)}}>Cancel</button><button className="primary" onClick={saveGoal}><Save size={16}/> Save objective</button></div></div>:<><div className="drawer-title"><div className="title-pills"><TeamPill team={goal.team}/><Division value={goal.division}/></div><h2>{goal.title}</h2><p>{goal.description}</p></div><div className="drawer-meta"><div><span>Owner</span><Owner goal={goal}/></div><div><span>Cycle</span><b><CalendarDays size={15}/>{goal.period}</b></div><div><span>Health</span><Status value={goal.status}/></div></div><section className="drawer-section"><div className="section-head"><div><b>Overall progress</b><span>Update progress to keep your team aligned.</span></div><strong>{goal.progress}%</strong></div><input className="range" type="range" min="0" max="100" value={goal.progress} onChange={e=>update(goal.id,{progress:Number(e.target.value),status:health(Number(e.target.value))})}/></section></>}
-    <section className="drawer-section"><div className="section-head"><div><b>Key results</b><span>Create, update, and remove measurable outcomes.</span></div></div><div className="kr-list">{goal.keyResults.map((kr,i)=><div className="kr crud-row" key={kr.id}><div className="kr-index">{i+1}</div><div className="crud-content"><input value={kr.title} onChange={e=>updateKr(kr.id,{title:e.target.value})}/><div className="kr-progress-edit"><input type="range" min="0" max="100" value={kr.value} onChange={e=>updateKr(kr.id,{value:Number(e.target.value)})}/><b>{kr.value}%</b></div></div><button className="delete-small" onClick={()=>deleteKr(kr.id)}><Trash2 size={15}/></button></div>)}</div><div className="inline-create"><input value={newKr} onChange={e=>setNewKr(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addKr()} placeholder="Add a measurable key result..."/><button onClick={addKr}><Plus size={16}/> Add</button></div></section>
-    <section className="drawer-section"><div className="section-head"><div><b>Initiatives</b><span>Manage the work driving this objective.</span></div></div><div className="initiative-list">{goal.initiatives.map(x=><div className="initiative-crud" key={x.id}><span><Zap size={15}/></span><input value={x.title} onChange={e=>updateInitiative(x.id,{title:e.target.value})}/><select className="initiative-owner" value={x.owner||''} onChange={e=>updateInitiative(x.id,{owner:e.target.value})}><option value="">No owner</option>{members.filter(m=>m.status==='Active'||m.name===x.owner).map(m=><option key={m.id}>{m.name}</option>)}</select><select value={x.status} onChange={e=>updateInitiative(x.id,{status:e.target.value})}><option>Planned</option><option>In progress</option><option>Done</option><option>Blocked</option></select><button className="delete-small" onClick={()=>deleteInitiative(x.id)}><Trash2 size={15}/></button></div>)}</div><div className="inline-create"><input value={newInitiative} onChange={e=>setNewInitiative(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInitiative()} placeholder="Add an initiative..."/><button onClick={addInitiative}><Plus size={16}/> Add</button></div></section>
-  </aside></>}
-function Field({label,full,children}){return <label className={full?'full':''}><span>{label}</span>{children}</label>}
-function ImagePicker({value,onChange,label,hint,round,fallback}){
-  const input=useRef(null);
-  const pick=async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;try{onChange(await readImage(file,round?256:360))}catch(err){window.alert(err.message)}};
-  return <div className={`image-picker ${round?'round':''}`}><button type="button" className="image-preview" onClick={()=>input.current.click()} title={label}>{value?<img src={value} alt=""/>:fallback}<span className="image-overlay"><Camera size={16}/></span></button><div className="image-copy"><b>{label}</b><span>{hint}</span><div className="image-actions"><button type="button" className="secondary" onClick={()=>input.current.click()}><Upload size={14}/> Upload</button>{value&&<button type="button" className="text-reset" onClick={()=>onChange('')}><X size={14}/> Remove</button>}</div></div><input ref={input} type="file" accept="image/*" hidden onChange={pick}/></div>
+function nextObjectiveCode(objectives, goal) {
+  const prefix = goal?.code || '0';
+  const used = new Set(objectives.filter(item => item.goalId === goal?.id).map(item => item.code));
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  for (const letter of letters) {
+    const code = `${prefix}.${letter}`;
+    if (!used.has(code)) return code;
+  }
+  return `${prefix}.${used.size + 1}`;
 }
-function SettingsPage({profile,company,saveProfile,saveCompany}){
-  const [user,setUser]=useState(profile),[org,setOrg]=useState(company),[note,setNote]=useState('');
-  const flash=msg=>{setNote(msg);window.setTimeout(()=>setNote(''),2200)};
-  const changeUser=e=>setUser({...user,[e.target.name]:e.target.value});
-  const changeOrg=e=>setOrg({...org,[e.target.name]:e.target.value});
-  return <section className="content module-page"><div className="hero"><div><div className="eyebrow"><Settings size={14}/> WORKSPACE SETTINGS</div><h1>Settings</h1><p>Update the signed-in profile and the company identity used across this workspace.</p></div>{note&&<div className="settings-saved"><Check size={16}/>{note}</div>}</div>
-    <div className="settings-grid">
-      <article className="module-card settings-card"><div className="module-card-head"><div><b>Your profile</b><span>Shown in the sidebar, top bar, and member directory.</span></div></div>
-        <form className="settings-form" onSubmit={e=>{e.preventDefault();saveProfile({...user,name:user.name.trim(),email:user.email.trim()});flash('Profile saved')}}>
-          <div className="full"><ImagePicker round value={user.photo} onChange={photo=>setUser({...user,photo})} label="Profile photo" hint="Square PNG or JPG works best. Stored locally in this browser." fallback={initials(user.name)}/></div>
-          <Field label="Full name"><input required name="name" value={user.name} onChange={changeUser}/></Field>
-          <Field label="Email"><input required type="email" name="email" value={user.email} onChange={changeUser}/></Field>
-          <Field label="Role"><input name="role" value={user.role} onChange={changeUser} placeholder="Chief Strategy Officer"/></Field>
-          <Field label="Workspace title"><input name="title" value={user.title} onChange={changeUser} placeholder="Workspace admin"/></Field>
-          <div className="form-actions"><button className="primary" type="submit"><Save size={16}/> Save profile</button></div>
-        </form>
-      </article>
-      <article className="module-card settings-card"><div className="module-card-head"><div><b>Company</b><span>Name, details, and logo used in the workspace brand.</span></div></div>
-        <form className="settings-form" onSubmit={e=>{e.preventDefault();saveCompany({...org,name:org.name.trim()});flash('Company saved')}}>
-          <div className="full"><ImagePicker value={org.logo} onChange={logo=>setOrg({...org,logo})} label="Company logo" hint="Transparent PNG recommended. Appears in the sidebar." fallback={<Building2 size={22}/>}/></div>
-          <Field label="Company name"><input required name="name" value={org.name} onChange={changeOrg}/></Field>
-          <Field label="Workspace tagline"><input name="tagline" value={org.tagline} onChange={changeOrg} placeholder="OKR workspace"/></Field>
-          <Field label="Industry"><input name="industry" value={org.industry} onChange={changeOrg} placeholder="Software"/></Field>
-          <Field label="Website"><input name="website" value={org.website} onChange={changeOrg} placeholder="https://"/></Field>
-          <Field label="Email domain"><input name="domain" value={org.domain} onChange={changeOrg} placeholder="company.com"/></Field>
-          <Field label="About the company" full><textarea name="description" value={org.description} onChange={changeOrg} placeholder="What does this organization do?"/></Field>
-          <div className="form-actions"><button className="primary" type="submit"><Save size={16}/> Save company</button></div>
-        </form>
-      </article>
+
+function cleanExternal(external) {
+  if (!external) return null;
+  const system = external.system?.trim() || '';
+  const key = external.key?.trim() || '';
+  const url = external.url?.trim() || '';
+  if (!system && !key && !url) return null;
+  return { system, key, url };
+}
+
+export default function App() {
+  const initialPlan = use(getPlanPromise());
+  const [state, setState] = useState(initialPlan);
+  const [page, setPage] = useState('Strategy');
+  const [goalId, setGoalId] = useState(null);
+  const [focusObjective, setFocusObjective] = useState(null);
+  const [objectiveId, setObjectiveId] = useState(null);
+  const [sidebar, setSidebar] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [objectiveFilters, setObjectiveFilters] = useState(blankObjectives);
+  const [initiativeFilters, setInitiativeFilters] = useState(blankInitiatives);
+  const view = useMemo(() => decorate(state), [state]);
+  const goal = view.goals.find(item => item.id === goalId) || null;
+  const objective = view.objectives.find(item => item.id === objectiveId) || null;
+
+  useEffect(() => { persistPlan(state); }, [state]);
+  useEffect(() => { document.title = `${state.company.name} · Strategy`; }, [state.company.name]);
+
+  const go = next => { setPage(next); setSidebar(false); };
+  const openGoal = (id, focus = null) => { setGoalId(id); setFocusObjective(focus); setPage('Goal'); setSidebar(false); };
+  const actions = {
+    saveGoal(id, patch) {
+      setState(current => ({
+        ...current,
+        goals: current.goals.map(item => {
+          if (item.id !== id) return item;
+          const next = { ...item, ...patch };
+          if (patch.pillarId && patch.pillarId !== item.pillarId) {
+            const pillar = current.pillars.find(entry => entry.id === patch.pillarId);
+            next.code = nextGoalCode(current.goals.filter(entry => entry.id !== id), pillar);
+          }
+          return next;
+        }),
+      }));
+      setModal(null);
+    },
+    addGoal(form) {
+      const pillar = state.pillars.find(item => item.id === form.pillarId) || state.pillars[0];
+      const id = uid('goal');
+      setState(current => ({ ...current, goals: [...current.goals, { id, code: nextGoalCode(current.goals, pillar), owner: form.owner || 'Strategy Office', ...form }] }));
+      setModal(null);
+      openGoal(id);
+    },
+    deleteGoal(id) {
+      const match = state.goals.find(item => item.id === id);
+      if (!match || !window.confirm(`Delete strategic goal ${match.code}? Its objectives, key results, means of verification, and initiatives will be removed.`)) return;
+      setState(current => removeGoal(current, id));
+      setGoalId(null);
+      setPage('Strategy');
+    },
+    saveObjective(id, patch) {
+      setState(current => ({ ...current, objectives: current.objectives.map(item => item.id === id ? { ...item, ...patch, quarters: item.quarters || blankQuarters() } : item) }));
+    },
+    addObjective(form) {
+      const titles = (form.keyResults || []).map(title => title.trim()).filter(Boolean);
+      if (titles.length < KEY_RESULT_MIN || titles.length > KEY_RESULT_MAX) return;
+      const id = uid('obj');
+      const { keyResults: _ignored, ...objective } = form;
+      setState(current => {
+        const goal = current.goals.find(item => item.id === form.goalId);
+        return {
+          ...current,
+          objectives: [...current.objectives, { ...objective, id, code: nextObjectiveCode(current.objectives, goal) }],
+          keyResults: [...(current.keyResults || []), ...titles.map(title => ({ id: uid('kr'), objectiveId: id, title, progress: 0 }))],
+          initiatives: [...current.initiatives, { id: uid('init'), objectiveId: id, title: form.title, divisionId: form.divisionId, external: null, blocked: false }],
+        };
+      });
+      setModal(null);
+      openGoal(form.goalId, id);
+      setObjectiveId(id);
+    },
+    deleteObjective(id) {
+      if (!window.confirm('Delete this objective, its key results, means of verification, and initiatives?')) return;
+      setState(current => removeObjective(current, id));
+      setObjectiveId(null);
+    },
+    saveKeyResult(id, patch) {
+      setState(current => ({
+        ...current,
+        keyResults: (current.keyResults || []).map(item => {
+          if (item.id !== id) return item;
+          const next = { ...item, ...patch };
+          if (patch.progress !== undefined) next.progress = clamp(patch.progress);
+          return next;
+        }),
+      }));
+    },
+    addKeyResult(objectiveId, title) {
+      const clean = title.trim();
+      if (!clean) return;
+      setState(current => {
+        const keyResults = current.keyResults || [];
+        const count = keyResults.filter(item => item.objectiveId === objectiveId).length;
+        if (count >= KEY_RESULT_MAX) return current;
+        return { ...current, keyResults: [...keyResults, { id: uid('kr'), objectiveId, title: clean, progress: 0 }] };
+      });
+    },
+    deleteKeyResult(id) {
+      setState(current => {
+        const keyResults = current.keyResults || [];
+        const match = keyResults.find(item => item.id === id);
+        if (!match) return current;
+        const count = keyResults.filter(item => item.objectiveId === match.objectiveId).length;
+        if (count <= KEY_RESULT_MIN) return current;
+        return {
+          ...current,
+          keyResults: keyResults.filter(item => item.id !== id),
+          krMeans: (current.krMeans || []).filter(item => item.keyResultId !== id),
+        };
+      });
+    },
+    saveKrMean(id, title) {
+      setState(current => ({
+        ...current,
+        krMeans: (current.krMeans || []).map(item => item.id === id ? { ...item, title } : item),
+      }));
+    },
+    addKrMean(keyResultId, title) {
+      const clean = title.trim();
+      if (!clean) return;
+      setState(current => ({
+        ...current,
+        krMeans: [...(current.krMeans || []), { id: uid('krm'), keyResultId, title: clean }],
+      }));
+    },
+    deleteKrMean(id) {
+      setState(current => ({ ...current, krMeans: (current.krMeans || []).filter(item => item.id !== id) }));
+    },
+    addInitiative(initiative) { setState(current => ({ ...current, initiatives: [...current.initiatives, initiative] })); },
+    saveInitiative(id, patch) {
+      setState(current => ({
+        ...current,
+        initiatives: current.initiatives.map(item => item.id === id ? { ...item, ...patch, external: patch.external === undefined ? item.external : cleanExternal(patch.external) } : item),
+      }));
+    },
+    deleteInitiative(id) {
+      if (!window.confirm('Delete this team initiative and its verification checks?')) return;
+      setState(current => removeInitiative(current, id));
+    },
+    saveVerification(id, progressOrPatch) {
+      const patch = typeof progressOrPatch === 'number' ? { progress: clamp(progressOrPatch) } : progressOrPatch;
+      if (patch.progress !== undefined) patch.progress = clamp(patch.progress);
+      setState(current => ({ ...current, verifications: current.verifications.map(item => item.id === id ? { ...item, ...patch } : item) }));
+    },
+    deleteVerification(id) { setState(current => ({ ...current, verifications: current.verifications.filter(item => item.id !== id) })); },
+    addVerification(initiativeId, title) {
+      setState(current => ({ ...current, verifications: [...current.verifications, { id: uid('mov'), initiativeId, title, progress: 0 }] }));
+    },
+    saveQuarter(objectiveIdToSave, quarter, patch) {
+      setState(current => ({
+        ...current,
+        objectives: current.objectives.map(item => {
+          if (item.id !== objectiveIdToSave) return item;
+          const quarters = item.quarters || blankQuarters();
+          return { ...item, quarters: { ...quarters, [quarter]: { ...quarters[quarter], ...patch, progress: patch.progress === undefined ? quarters[quarter].progress : clamp(patch.progress) } } };
+        }),
+      }));
+    },
+  };
+
+  return (
+    <div className="app-shell">
+      <Sidebar open={sidebar} page={page} go={go} close={() => setSidebar(false)} profile={state.profile} reviewsDue={view.org.reviewsDue} />
+      <main className="main">
+        <header className="topbar">
+          <button className="mobile-menu icon-button" type="button" onClick={() => setSidebar(true)} aria-label="Open menu"><Menu size={20} /></button>
+          <div className="crumb"><span>{state.company.name}</span><ChevronRight size={14} /><strong>{page === 'Goal' ? 'Strategic goal' : page}</strong></div>
+          <label className="top-search">
+            <Search size={15} />
+            <input
+              value={objectiveFilters.q}
+              onChange={event => setObjectiveFilters(current => ({ ...current, q: event.target.value }))}
+              onKeyDown={event => { if (event.key === 'Enter') go('Objectives'); }}
+              placeholder="Search objectives and divisions"
+            />
+            {objectiveFilters.q && <button type="button" onClick={() => setObjectiveFilters(current => ({ ...current, q: '' }))} aria-label="Clear search"><X size={14} /></button>}
+          </label>
+          <button className="review-chip" type="button" onClick={() => go('Reviews')}>{view.org.reviewsDue} reviews due</button>
+        </header>
+        {page === 'Strategy' && <StrategyPage view={view} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
+        {page === 'Goal' && <GoalPage goal={goal} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
+        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} />}
+        {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
+        {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
+        {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
+        {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: divisionId, role: 'any' }); go('Objectives'); }} />}
+        {page === 'Reports' && <ReportsPage view={view} onOpen={id => { const match = view.objectives.find(item => item.id === id); if (match) openGoal(match.goalId, id); }} />}
+        {page === 'Settings' && <SettingsPage state={state} setState={setState} />}
+      </main>
+      {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
+      {modal?.type === 'goal' && <GoalModal pillars={state.pillars} goal={modal.goal} onClose={() => setModal(null)} onSave={form => modal.goal ? actions.saveGoal(modal.goal.id, form) : actions.addGoal(form)} />}
+      {modal?.type === 'objective' && <ObjectiveModal goals={view.goals} divisions={state.divisions} presetGoalId={modal.goalId} onClose={() => setModal(null)} onSave={actions.addObjective} />}
+      {objective && <ObjectiveDrawer objective={objective} divisions={state.divisions} actions={actions} onClose={() => setObjectiveId(null)} />}
     </div>
-  </section>;
+  );
 }
-function GoalModal({goals,members,teamNames,cycles,close,save}){const names=teamNames||Object.keys(teams),cycleNames=(cycles||[]).map(c=>c.name), [form,setForm]=useState({title:'',description:'',team:names[0]||'',division:divisions[0],owner:'',period:cycleNames.find(n=>n==='2026')||cycleNames[0]||'2026',progress:0,status:'Not started',parentId:'',keyResult:'',initiatives:''}),change=e=>setForm({...form,[e.target.name]:e.target.value}),submit=e=>{e.preventDefault();if(form.title&&form.owner)save(form)};return <div className="modal-wrap"><div className="modal"><div className="modal-head"><div><span className="drawer-label"><Sparkles size={14}/> NEW OBJECTIVE</span><h2>Create a goal</h2><p>Define the outcome, owner, division, and work that will move it forward.</p></div><button className="icon-button" onClick={close}><X/></button></div><form onSubmit={submit}><Field label="Objective title" full><input autoFocus required name="title" value={form.title} onChange={change} placeholder="What do you want to accomplish?"/></Field><Field label="Description" full><textarea name="description" value={form.description} onChange={change} placeholder="Why does this objective matter?"/></Field><Field label="Team"><select name="team" value={form.team} onChange={change}>{names.map(t=><option key={t}>{t}</option>)}</select></Field><Field label="Division"><select name="division" value={form.division} onChange={change}>{divisions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Owner"><select required name="owner" value={form.owner} onChange={change}><option value="">Select an owner</option>{members.filter(m=>m.status==='Active').map(m=><option key={m.id}>{m.name}</option>)}</select></Field><Field label="Cycle"><select name="period" value={form.period} onChange={change}>{cycleNames.map(n=><option key={n}>{n}</option>)}</select></Field><Field label="Align to"><select name="parentId" value={form.parentId} onChange={change}><option value="">Company-level goal</option>{goals.map(g=><option value={g.id} key={g.id}>{g.title}</option>)}</select></Field><Field label="Starting progress"><input type="number" name="progress" min="0" max="100" value={form.progress} onChange={change}/></Field><Field label="First measurable key result" full><input name="keyResult" value={form.keyResult} onChange={change} placeholder="e.g. Increase activation rate from 42% to 65%"/></Field><Field label="Initiatives · one per line" full><textarea name="initiatives" value={form.initiatives} onChange={change} placeholder={'Redesign onboarding flow\nLaunch guided templates'}/></Field><div className="form-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" type="submit"><Plus size={17}/> Create goal</button></div></form></div></div>}
-export default App;
+
+function Sidebar({ open, page, go, close, profile, reviewsDue }) {
+  return (
+    <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <div className="brand">
+        <img className="brand-logo" src="/brand/mpao-logo-white.png" alt="Maldives Pension Office" />
+        <button className="mobile-close" type="button" onClick={close} aria-label="Close menu"><X size={18} /></button>
+      </div>
+      <nav>
+        {NAV.map(([label, Icon]) => (
+          <button key={label} type="button" className={page === label || (page === 'Goal' && label === 'Strategy') ? 'active' : ''} onClick={() => go(label)}>
+            <Icon size={18} /><span>{label}</span>{label === 'Reviews' && reviewsDue > 0 && <em>{reviewsDue}</em>}
+          </button>
+        ))}
+      </nav>
+      <div className="nav-label">ORGANISATION</div>
+      <nav>
+        {WORKSPACE.map(([label, Icon]) => (
+          <button key={label} type="button" className={page === label ? 'active' : ''} onClick={() => go(label)}><Icon size={18} /><span>{label}</span></button>
+        ))}
+      </nav>
+      <div className="sidebar-card">
+        <b>How the plan links</b>
+        <p>Priority areas hold the strategic goals. Each objective has three or four key results, and each key result has means of verification. Team initiatives connect that work to projects tracked outside this system.</p>
+      </div>
+      <img className="sidebar-forward" src="/brand/mpao-forward-white.png" alt="" />
+      <div className="sidebar-foot">
+        <button type="button" className={page === 'Settings' ? 'active' : ''} onClick={() => go('Settings')}><Settings size={18} />Settings</button>
+        <div className="profile"><div className="avatar">{initials(profile.name)}</div><div><b>{profile.name}</b><span>{profile.role}</span></div></div>
+      </div>
+    </aside>
+  );
+}
+
+function StrategyPage({ view, openGoal, addGoal, showCross }) {
+  const attention = view.goals.filter(goal => goal.status === 'Off track' || goal.status === 'At risk').slice().sort((a, b) => a.progress - b.progress).slice(0, 4);
+  const crm = view.objectives.find(item => item.id === 'obj-crm');
+  return (
+    <section className="content strategy-page">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">STRATEGIC PERFORMANCE</div>
+          <h1>Where the plan stands</h1>
+          <p>Organisational performance is the overall progress of the strategic goals. Open a goal to reach its objectives and key results. Each key result has means of verification, and team initiatives show how the work is delivered.</p>
+        </div>
+        <button className="primary" type="button" onClick={addGoal}><Plus size={16} /> Strategic goal</button>
+      </div>
+      <div className="score-row">
+        <article className="org-score">
+          <Ring value={view.org.progress} label="Organisational progress" />
+          <div>
+            <span>Organisation</span>
+            <strong>{view.org.status}</strong>
+            <small>{view.org.onTrack} of {view.org.goals} goals are on pace for their horizon.</small>
+          </div>
+        </article>
+        {view.pillars.map(pillar => (
+          <article key={pillar.id} className="pillar-score">
+            <span style={{ background: pillar.soft, color: pillar.color }}>{pillar.code}</span>
+            <b>{pillar.progress}%</b>
+            <em>{pillar.name}</em>
+            <small>{pillar.goals.length} goals · {pillar.status}</small>
+          </article>
+        ))}
+      </div>
+      <div className="strategy-board">
+        {view.pillars.map(pillar => (
+          <section key={pillar.id} className="pillar-col" style={{ '--accent': pillar.color, '--soft': pillar.soft }}>
+            <header>
+              <div className="pillar-index" style={{ background: pillar.color }}>{pillar.code}</div>
+              <h2>{pillar.name}</h2>
+              <p>{pillar.intent}</p>
+            </header>
+            {pillar.goals.map(goal => (
+              <button key={goal.id} type="button" className="goal-tile" onClick={() => openGoal(goal.id)}>
+                <div className="goal-tile-top"><span>{goal.code}</span><Horizon goal={goal} /></div>
+                <strong>{goal.title}</strong>
+                <Progress value={goal.progress} />
+                <small>{goal.currentYearCount} objectives in {CURRENT_YEAR} · {goal.currentYearProgress}% this year · {goal.objectives.length} on the goal</small>
+              </button>
+            ))}
+          </section>
+        ))}
+      </div>
+      <div className="dash-split">
+        <section className="module-card">
+          <div className="module-card-head"><div><b>Goals that need attention</b><span>Lowest progress against the time already elapsed on the horizon.</span></div></div>
+          <div className="attention-list">
+            {attention.map(goal => (
+              <button key={goal.id} type="button" onClick={() => openGoal(goal.id)}>
+                <span>{goal.code}</span>
+                <div><b>{goal.title}</b><small>{goal.pillar?.name}</small></div>
+                <Progress value={goal.progress} compact />
+                <Status value={goal.status} />
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="module-card spotlight">
+          <div className="module-card-head"><div><b>From objective to project</b><span>{view.org.cross} initiatives are executed by a division that does not own the objective.</span></div></div>
+          {crm ? (
+            <div className="spotlight-body">
+              <p><b>{crm.code}</b> {crm.title}</p>
+              <div className="chip-line"><DivisionTag division={crm.division} compact /><span className="link-arrow">supported by</span>{crm.supporting.map(division => <DivisionTag key={division.id} division={division} compact />)}</div>
+              <p className="quiet">{crm.division.name} owns the service outcome. {crm.initiatives.find(item => item.crossDivision)?.division.name || 'A supporting division'} executes the system initiative, and that project stays in the external delivery system.</p>
+              <div className="detail-actions">
+                <button type="button" className="primary" onClick={() => openGoal(crm.goalId, crm.id)}>Drill into this objective</button>
+                <button type="button" className="secondary" onClick={showCross}>All cross-division work</button>
+              </div>
+            </div>
+          ) : <Empty title="No sample linkage" detail="Create an objective with an initiative owned by another division." />}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onManage, addObjective, editGoal }) {
+  const [year, setYear] = useState('all');
+  useEffect(() => {
+    if (!focusObjective) return;
+    document.getElementById(`objective-${focusObjective}`)?.scrollIntoView({ block: 'center' });
+  }, [focusObjective, goal?.id]);
+  if (!goal) {
+    return <section className="content"><Empty title="Goal not found" detail="It may have been deleted." /><button type="button" className="secondary" onClick={back}>Back to strategy</button></section>;
+  }
+  return (
+    <section className="content">
+      <button type="button" className="text-back" onClick={back}>Strategy</button>
+      <div className="hero">
+        <div>
+          <div className="eyebrow" style={{ color: goal.pillar?.color }}>{goal.pillar?.name}</div>
+          <h1>{goal.code} {goal.title}</h1>
+          <p>{goal.description}</p>
+        </div>
+        <div className="hero-actions">
+          <button type="button" className="secondary" onClick={editGoal}>Edit goal</button>
+          <button type="button" className="secondary" onClick={() => actions.deleteGoal(goal.id)}>Delete</button>
+          <button type="button" className="primary" onClick={addObjective}><Plus size={16} /> Objective</button>
+        </div>
+      </div>
+      <div className="goal-summary">
+        <div><span>Horizon</span><Horizon goal={goal} /></div>
+        <div><span>Progress to date</span><Progress value={goal.progress} /><Status value={goal.status} /></div>
+        <div><span>{CURRENT_YEAR}</span><strong>{goal.currentYearProgress}%</strong><small>{goal.currentYearCount} objectives this year</small></div>
+        <div><span>Full goal</span><strong>{goal.objectives.length}</strong><small>objectives across the horizon</small></div>
+      </div>
+      <div className="year-switch">
+        {['all', ...YEARS.filter(item => goal.objectives.some(objective => objective.year === item))].map(item => (
+          <button key={item} type="button" className={year === item ? 'active' : ''} onClick={() => setYear(item)}>{item === 'all' ? 'All years' : item}</button>
+        ))}
+      </div>
+      <GoalCascade
+        goal={goal}
+        year={year}
+        openObjective={focusObjective}
+        setOpenObjective={setFocusObjective}
+        onManage={onManage}
+        onProgress={(id, progress) => actions.saveVerification(id, progress)}
+        onAddVerification={actions.addVerification}
+        onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })}
+        onSaveMean={actions.saveKrMean}
+        onAddMean={actions.addKrMean}
+        onRemoveMean={actions.deleteKrMean}
+      />
+    </section>
+  );
+}
+
+function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
+  const rows = view.objectives.filter(objective => {
+    if (filters.pillar !== 'all' && objective.pillar?.id !== filters.pillar) return false;
+    if (filters.year !== 'all' && objective.year !== filters.year) return false;
+    if (filters.status !== 'all' && objective.status !== filters.status) return false;
+    if (!involvesDivision(objective, filters.division, filters.role)) return false;
+    const haystack = `${objective.code} ${objective.title} ${objective.division?.name} ${objective.goal?.title} ${objective.supporting.map(division => division.name).join(' ')} ${objective.keyResults.map(item => `${item.title} ${(item.means || []).map(mean => mean.title).join(' ')}`).join(' ')}`.toLowerCase();
+    return haystack.includes(filters.q.toLowerCase());
+  }).sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+  const active = ['pillar', 'division', 'status', 'year'].filter(key => filters[key] !== 'all').length + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">ANNUAL OBJECTIVES</div>
+          <h1>Objectives</h1>
+          <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
+        </div>
+        <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+      </div>
+      <FilterBar>
+        <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
+        <SelectFilter label="Division" value={filters.division} onChange={division => setFilters({ ...filters, division })} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(division => ({ value: division.id, label: division.name }))]} />
+        <SelectFilter label="Division role" value={filters.role} onChange={role => setFilters({ ...filters, role })} options={[{ value: 'any', label: 'Any role' }, { value: 'responsible', label: 'Responsible' }, { value: 'supporting', label: 'Supporting' }, { value: 'executing', label: 'Executing an initiative' }]} />
+        <SelectFilter label="Status" value={filters.status} onChange={status => setFilters({ ...filters, status })} options={[{ value: 'all', label: 'All statuses' }, ...STATUSES.map(status => ({ value: status, label: status }))]} />
+        <SelectFilter label="Year" value={filters.year} onChange={year => setFilters({ ...filters, year })} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(year => ({ value: year, label: year }))]} />
+        <button type="button" className="text-reset" disabled={!active} onClick={() => setFilters(blankObjectives)}>Reset{active ? ` (${active})` : ''}</button>
+      </FilterBar>
+      <div className="register">
+        <div className="register-row head"><span>Objective</span><span>Priority / goal</span><span>Responsible</span><span>Year</span><span>Quarters</span><span>Progress</span><span>Status</span></div>
+        {rows.map(objective => (
+          <button key={objective.id} type="button" className="register-row" onClick={() => onOpen(objective.id)}>
+            <div><b>{objective.code} {objective.title}</b><small>{objective.keyResults.length} key results · {objective.initiatives.length} initiatives</small></div>
+            <div><b>{objective.pillar?.code} · {objective.goal?.code}</b><small>{objective.goal?.title}</small></div>
+            <div className="stack-tags"><DivisionTag division={objective.division} compact />{objective.supporting.slice(0, 2).map(division => <small key={division.id}>{division.name}</small>)}</div>
+            <span>{objective.year}</span>
+            <QuarterPips quarters={objective.quarters} year={objective.year} currentYear={CURRENT_YEAR} currentQuarter={CURRENT_QUARTER} />
+            <Progress value={objective.progress} />
+            <Status value={objective.status} />
+          </button>
+        ))}
+        {!rows.length && <Empty title="No objectives match" detail="Adjust the priority area, division, status, or year." />}
+      </div>
+    </section>
+  );
+}
+
+function InitiativesPage({ view, filters, setFilters, onOpen }) {
+  const rows = view.initiatives.filter(initiative => {
+    if (filters.cross && !initiative.crossDivision) return false;
+    if (filters.pillar !== 'all' && initiative.pillarId !== filters.pillar) return false;
+    if (filters.division !== 'all' && initiative.divisionId !== filters.division) return false;
+    if (filters.status !== 'all' && initiative.status !== filters.status) return false;
+    if (filters.year !== 'all' && initiative.objectiveYear !== filters.year) return false;
+    const haystack = `${initiative.title} ${initiative.objectiveTitle} ${initiative.division?.name} ${initiative.external?.key || ''} ${initiative.external?.system || ''}`.toLowerCase();
+    return haystack.includes(filters.q.toLowerCase());
+  });
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">TEAM INITIATIVES</div>
+          <h1>Initiatives</h1>
+          <p>These are the projects divisions execute for an objective. Task management stays in Jira, Azure DevOps, or Planner. This register keeps the link.</p>
+        </div>
+      </div>
+      <FilterBar>
+        <label className="filter-field search-field"><span>Search</span><input value={filters.q} onChange={event => setFilters({ ...filters, q: event.target.value })} placeholder="Initiative, objective, or project key" /></label>
+        <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
+        <SelectFilter label="Executing division" value={filters.division} onChange={division => setFilters({ ...filters, division })} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(division => ({ value: division.id, label: division.name }))]} />
+        <SelectFilter label="Status" value={filters.status} onChange={status => setFilters({ ...filters, status })} options={[{ value: 'all', label: 'All statuses' }, ...INIT_STATUSES.map(status => ({ value: status, label: status }))]} />
+        <SelectFilter label="Objective year" value={filters.year} onChange={year => setFilters({ ...filters, year })} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(year => ({ value: year, label: year }))]} />
+        <label className="check-line filter-check"><input type="checkbox" checked={filters.cross} onChange={event => setFilters({ ...filters, cross: event.target.checked })} /><span>Cross-division only</span></label>
+      </FilterBar>
+      <p className="result-count">{rows.length} initiatives</p>
+      <div className="initiative-register">
+        {rows.map(initiative => (
+          <button key={initiative.id} type="button" className={`initiative-row ${initiative.crossDivision ? 'cross' : ''}`} onClick={() => onOpen(initiative.objectiveId)}>
+            <div>
+              <b>{initiative.title}</b>
+              <small>{initiative.objectiveCode} · {initiative.objectiveTitle}</small>
+            </div>
+            <div className="stack-tags">
+              <span>Executes</span>
+              <DivisionTag division={initiative.division} compact />
+              {initiative.crossDivision && <small>for {initiative.responsibleDivision?.name}</small>}
+            </div>
+            <div><b>{initiative.verified}/{initiative.movs.length}</b><small>verified</small></div>
+            <div><b>{initiative.external?.system || 'Not linked'}</b><small>{initiative.external?.key || 'No external project'}</small></div>
+            <Progress value={initiative.progress} compact />
+            <Status value={initiative.status} />
+          </button>
+        ))}
+        {!rows.length && <Empty title="No initiatives match" detail="Clear the cross-division filter or choose another division." />}
+      </div>
+    </section>
+  );
+}
+
+function ReviewsPage({ view, actions, onOpen }) {
+  const [year, setYear] = useState(String(CURRENT_YEAR));
+  const [quarter, setQuarter] = useState(CURRENT_QUARTER);
+  const [dueOnly, setDueOnly] = useState(true);
+  const [division, setDivision] = useState('all');
+  const rows = view.objectives.filter(objective => objective.year === year && (division === 'all' || objective.divisionId === division) && (!dueOnly || !objective.quarters?.[quarter]?.note));
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">QUARTERLY CADENCE</div>
+          <h1>{quarter} {year} reviews</h1>
+          <p>Objectives are reviewed each quarter. Filing a note records the quarter. The strategic score continues to roll up from the key results.</p>
+        </div>
+      </div>
+      <div className="review-toolbar">
+        <SelectFilter label="Year" value={year} onChange={setYear} options={YEARS.map(item => ({ value: item, label: item }))} />
+        <div className="year-switch">{['Q1', 'Q2', 'Q3', 'Q4'].map(item => <button key={item} type="button" className={quarter === item ? 'active' : ''} onClick={() => setQuarter(item)}>{item}</button>)}</div>
+        <SelectFilter label="Responsible division" value={division} onChange={setDivision} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(item => ({ value: item.id, label: item.name }))]} />
+        <label className="check-line filter-check"><input type="checkbox" checked={dueOnly} onChange={event => setDueOnly(event.target.checked)} /><span>Due only</span></label>
+      </div>
+      <div className="review-list">
+        {rows.map(objective => <ReviewRow key={`${objective.id}-${quarter}`} objective={objective} quarter={quarter} actions={actions} onOpen={() => onOpen(objective.id)} />)}
+        {!rows.length && <Empty title="Nothing waiting in this quarter" detail="Turn off Due only to see reviews that have already been filed." />}
+      </div>
+    </section>
+  );
+}
+
+function ReviewRow({ objective, quarter, actions, onOpen }) {
+  const report = objective.quarters?.[quarter] || { progress: 0, note: '' };
+  const [progress, setProgress] = useState(report.progress);
+  const [note, setNote] = useState(report.note || '');
+  return (
+    <article className="review-row">
+      <button type="button" className="review-title" onClick={onOpen}><b>{objective.code}</b><span>{objective.title}</span><DivisionTag division={objective.division} compact /></button>
+      <div className="review-live"><span>Live roll-up</span><Progress value={objective.progress} compact /><Status value={objective.status} /></div>
+      <form onSubmit={event => { event.preventDefault(); actions.saveQuarter(objective.id, quarter, { progress: Number(progress), note: note.trim() }); }}>
+        <label><span>{quarter} reported %</span><input type="number" min="0" max="100" value={progress} onChange={event => setProgress(event.target.value)} /></label>
+        <label className="grow"><span>Review note</span><input value={note} onChange={event => setNote(event.target.value)} placeholder="What changed this quarter?" required /></label>
+        <button className="secondary" type="button" onClick={() => setProgress(objective.progress)}>Use live</button>
+        <button className="primary" type="submit">File review</button>
+      </form>
+    </article>
+  );
+}
+
+function AlignmentPage({ view, actions, onManage }) {
+  const [year, setYear] = useState(String(CURRENT_YEAR));
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">ALIGNMENT</div>
+          <h1>From priority to proof</h1>
+          <p>Open a priority area, then a goal, then an objective. Means of verification are recorded on each key result. Initiatives show who executes the work.</p>
+        </div>
+        <div className="year-switch">{['all', '2025', '2026', '2027'].map(item => <button key={item} type="button" className={year === item ? 'active' : ''} onClick={() => setYear(item)}>{item === 'all' ? 'All years' : item}</button>)}</div>
+      </div>
+      <AlignmentTree pillars={view.pillars} year={year} onManage={onManage} onProgress={(id, progress) => actions.saveVerification(id, progress)} onAddVerification={actions.addVerification} onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })} onSaveMean={actions.saveKrMean} onAddMean={actions.addKrMean} onRemoveMean={actions.deleteKrMean} />
+    </section>
+  );
+}
+
+function DivisionsPage({ view, openDivision }) {
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">DIVISIONS</div>
+          <h1>Who is accountable</h1>
+          <p>A division can own objectives, support another division, or execute an initiative for an objective it does not own.</p>
+        </div>
+      </div>
+      <div className="division-grid">
+        {view.divisions.filter(division => division.owned.length || division.executing.length || division.supporting.length).map(division => (
+          <article key={division.id} className="division-card">
+            <header><DivisionTag division={division} /><Status value={division.status} /></header>
+            <strong>{division.owned.length ? `${division.progress}%` : '—'}</strong>
+            <p>{division.owned.length ? 'Average progress of objectives this division owns.' : 'Supports or executes work owned by other divisions.'}</p>
+            <dl>
+              <div><dt>Owns</dt><dd>{division.owned.length}</dd></div>
+              <div><dt>Supports</dt><dd>{division.supporting.length}</dd></div>
+              <div><dt>Executes</dt><dd>{division.executing.length}</dd></div>
+              <div><dt>For others</dt><dd>{division.cross.length}</dd></div>
+            </dl>
+            <button type="button" className="secondary" onClick={() => openDivision(division.id)}>View objectives</button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReportsPage({ view, onOpen }) {
+  const [pillar, setPillar] = useState('all');
+  const [year, setYear] = useState('all');
+  const rows = view.objectives.filter(objective => (pillar === 'all' || objective.pillar?.id === pillar) && (year === 'all' || objective.year === year));
+  const goals = view.goals.filter(goal => pillar === 'all' || goal.pillarId === pillar);
+  const exportCsv = () => {
+    const header = ['Priority area', 'Goal', 'Horizon', 'Objective', 'Year', 'Responsible division', 'Supporting divisions', 'Progress', 'Status', 'Key results', 'Key result progress', 'Key result means of verification', 'Q1', 'Q2', 'Q3', 'Q4', 'Initiative', 'Executing division', 'Cross division', 'External system', 'External key', 'Initiative verification', 'Initiative verification progress'];
+    const lines = [header];
+    rows.forEach(objective => {
+      const keyResultTitles = objective.keyResults.map((item, index) => `KR${index + 1}: ${item.title}`).join(' | ');
+      const keyResultProgress = objective.keyResults.map(item => item.progress).join(' | ');
+      const keyResultMeans = objective.keyResults.map((item, index) => `KR${index + 1}: ${(item.means || []).map(mean => mean.title).filter(Boolean).join('; ')}`).join(' | ');
+      const base = [objective.pillar?.name, `${objective.goal?.code} ${objective.goal?.title}`, `${objective.goal?.horizonYears}-year`, `${objective.code} ${objective.title}`, objective.year, objective.division?.name, objective.supporting.map(division => division.name).join('; '), objective.progress, objective.status, keyResultTitles, keyResultProgress, keyResultMeans, objective.quarters?.Q1?.progress, objective.quarters?.Q2?.progress, objective.quarters?.Q3?.progress, objective.quarters?.Q4?.progress];
+      if (!objective.initiatives.length) lines.push([...base, '', '', '', '', '', '', '']);
+      objective.initiatives.forEach(initiative => {
+        const initiativeCells = [initiative.title, initiative.division?.name, initiative.crossDivision ? 'Yes' : 'No', initiative.external?.system || '', initiative.external?.key || ''];
+        if (!initiative.movs.length) lines.push([...base, ...initiativeCells, '', '']);
+        initiative.movs.forEach(mov => lines.push([...base, ...initiativeCells, mov.title, mov.progress]));
+      });
+    });
+    const csv = lines.map(line => line.map(cell => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'strategy-plan.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <section className="content report-page">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">REPORT</div>
+          <h1>Strategy report</h1>
+          <p>A slice of the plan for leadership review. The export keeps every objective, its key results, the means of verification on each key result, and each initiative.</p>
+        </div>
+        <div className="hero-actions">
+          <button type="button" className="secondary" onClick={() => window.print()}><Printer size={16} /> Print</button>
+          <button type="button" className="primary" onClick={exportCsv}><Download size={16} /> Export CSV</button>
+        </div>
+      </div>
+      <FilterBar>
+        <SelectFilter label="Priority area" value={pillar} onChange={setPillar} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(item => ({ value: item.id, label: item.name }))]} />
+        <SelectFilter label="Year" value={year} onChange={setYear} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(item => ({ value: item, label: item }))]} />
+      </FilterBar>
+      <div className="metrics">
+        <article className="metric"><div><span>Goals in view</span><strong>{goals.length}</strong><small>Strategic goals</small></div></article>
+        <article className="metric"><div><span>Objectives</span><strong>{rows.length}</strong><small>Matching filters</small></div></article>
+        <article className="metric"><div><span>Average progress</span><strong>{rows.length ? Math.round(rows.reduce((sum, item) => sum + item.progress, 0) / rows.length) : 0}%</strong><small>Objective roll-up</small></div></article>
+        <article className="metric"><div><span>Cross-division</span><strong>{rows.reduce((sum, item) => sum + item.initiatives.filter(initiative => initiative.crossDivision).length, 0)}</strong><small>Initiatives executed elsewhere</small></div></article>
+      </div>
+      <div className="register">
+        <div className="register-row head report-head"><span>Goal</span><span>Progress</span><span>Status</span><span>{CURRENT_YEAR}</span><span>Objectives</span></div>
+        {goals.map(goal => (
+          <button key={goal.id} type="button" className="register-row report-head" onClick={() => onOpen(goal.objectives[0]?.id)}>
+            <div><b>{goal.code} {goal.title}</b><small>{goal.pillar?.name} · {goal.horizonYears}-year</small></div>
+            <Progress value={goal.progress} />
+            <Status value={goal.status} />
+            <span>{goal.currentYearProgress}%</span>
+            <span>{goal.objectives.length}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SettingsPage({ state, setState }) {
+  const [company, setCompany] = useState(state.company);
+  const [profile, setProfile] = useState(state.profile);
+  const [note, setNote] = useState('');
+  const flash = message => { setNote(message); window.setTimeout(() => setNote(''), 2200); };
+  return (
+    <section className="content">
+      <div className="hero">
+        <div>
+          <div className="eyebrow">SETTINGS</div>
+          <h1>Workspace</h1>
+          <p>{planUsesDatabase() ? 'The strategy plan is stored in the Cloudflare database for this site. Restoring the sample replaces that shared plan.' : 'The sample plan is stored in this browser. Restoring it replaces any goals, objectives, and reviews you have edited.'}</p>
+        </div>
+        {note && <div className="settings-saved">{note}</div>}
+      </div>
+      <div className="settings-grid">
+        <article className="module-card">
+          <div className="module-card-head"><div><b>Organisation</b><span>Shown in the sidebar and report heading.</span></div></div>
+          <form className="settings-form" onSubmit={event => { event.preventDefault(); setState(current => ({ ...current, company })); flash('Organisation saved'); }}>
+            <Field label="Name"><input value={company.name} onChange={event => setCompany({ ...company, name: event.target.value })} required /></Field>
+            <Field label="Tagline"><input value={company.tagline} onChange={event => setCompany({ ...company, tagline: event.target.value })} /></Field>
+            <div className="form-actions"><button className="primary" type="submit">Save organisation</button></div>
+          </form>
+        </article>
+        <article className="module-card">
+          <div className="module-card-head"><div><b>Signed-in profile</b><span>Used for the workspace identity.</span></div></div>
+          <form className="settings-form" onSubmit={event => { event.preventDefault(); setState(current => ({ ...current, profile })); flash('Profile saved'); }}>
+            <Field label="Name"><input value={profile.name} onChange={event => setProfile({ ...profile, name: event.target.value })} required /></Field>
+            <Field label="Role"><input value={profile.role} onChange={event => setProfile({ ...profile, role: event.target.value })} /></Field>
+            <div className="form-actions"><button className="primary" type="submit">Save profile</button></div>
+          </form>
+        </article>
+      </div>
+      <article className="module-card restore-card">
+        <div>
+          <b>Restore the sample plan</b>
+          <p>Brings back the Pension Office priority areas, strategic goals, objectives, key results, initiatives, and means of verification.</p>
+        </div>
+        <button type="button" className="secondary" onClick={() => { if (window.confirm('Replace the current plan with the sample strategy?')) { resetPlan().then(seed => { setState(seed); flash('Sample plan restored'); }).catch(() => flash('Could not restore the plan')); } }}>Restore sample plan</button>
+      </article>
+    </section>
+  );
+}
+
+function FilterBar({ children }) {
+  return <div className="filter-bar"><Filter size={15} />{children}</div>;
+}

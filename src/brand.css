@@ -1,0 +1,191 @@
+/* Maldives Pension Office — corporate surface.
+   Navy and white carry the interface. Flamingo is a 5% accent.
+   Outfit stands in for Gilroy. */
+
+:root {
+  --border: #DADCEF;
+  --muted: #4A4F8A;
+  --ink: #010670;
+  color: #1A1C33;
+  background: #F0F0F0;
+}
+
+body {
+  background: #F0F0F0;
+}
+
+.boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #F0F0F0;
+  color: #010670;
+  text-align: center;
+}
+
+.boot b {
+  display: block;
+  font: 700 18px Outfit;
+}
+
+.boot p {
+  max-width: 420px;
+  margin: 8px auto 0;
+  color: #4A4F8A;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.hero h1,
+.crumb strong {
+  color: #010670;
+}
+
+.sidebar {
+  background: #010670;
+  border-right-color: #000455;
+  overflow-y: auto;
+}
+
+.brand {
+  align-items: flex-start;
+  padding: 2px 4px 20px;
+}
+
+.brand-logo {
+  display: block;
+  width: min(176px, 100%);
+  height: auto;
+}
+
+.sidebar .mobile-close {
+  color: #fff;
+}
+
+.nav-label {
+  color: #9AA0D0;
+}
+
+.sidebar nav button,
+.sidebar-foot > button {
+  color: #E6E7F4;
+}
+
+.sidebar nav button:hover,
+.sidebar nav button.active,
+.sidebar-foot > button:hover,
+.sidebar-foot > button.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.sidebar nav button.active {
+  box-shadow: inset 3px 0 0 #EA4927;
+}
+
+.sidebar nav em {
+  background: #EA4927;
+  color: #fff;
+  font-weight: 700;
+}
+
+.sidebar-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-card b {
+  color: #fff;
+}
+
+.sidebar-card p {
+  color: #D5D8E6;
+}
+
+.sidebar-forward {
+  display: block;
+  width: 72px;
+  height: auto;
+  margin: 18px auto 4px;
+}
+
+.profile {
+  border-top-color: rgba(255, 255, 255, 0.16);
+}
+
+.profile b {
+  color: #fff;
+}
+
+.profile span {
+  color: #C8CCE8;
+}
+
+.profile:hover b {
+  color: #F9E9CD;
+}
+
+.avatar {
+  background: #F9E9CD;
+  color: #010670;
+}
+
+.horizon-chip {
+  background: #F9E9CD;
+  color: #010670;
+}
+
+.review-chip {
+  border-color: #EA4927;
+  background: #EA4927;
+  color: #fff;
+}
+
+.review-chip:hover {
+  background: #C93A1C;
+}
+
+.status.red {
+  color: #B4331C;
+  background: #FDECEA;
+}
+
+.initiative-panel.cross,
+.initiative-row.cross {
+  border-color: #F3C4BC;
+  border-left: 3px solid #EA4927;
+  background: #FFF8F6;
+}
+
+.initiative-panel header span {
+  color: #4A4F8A;
+}
+
+.cross-note {
+  background: #FDECEA;
+  color: #8E2A18;
+}
+
+.division-picker button.selected {
+  color: #010670;
+}
+
+.initiative-meta a {
+  color: #2430B0;
+}
+
+.filter-field select:focus,
+.filter-field input:focus,
+.drawer-form input:focus,
+.drawer-form textarea:focus,
+.drawer-form select:focus,
+.review-row input:focus,
+.report-filters select:focus,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: #42C3F7;
+  box-shadow: 0 0 0 3px #42C3F733;
+  outline: none;
+}
