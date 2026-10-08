@@ -18,11 +18,12 @@ export function planUsesDatabase() {
 }
 
 async function writePlan(plan) {
+  const body = JSON.stringify(plan);
   const response = await fetch('/api/plan', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(plan),
-    keepalive: true,
+    body,
+    keepalive: body.length < 60000,
   });
   if (!response.ok) throw new Error('Could not save the strategy plan.');
 }
@@ -37,7 +38,12 @@ export function loadPlan() {
       remote = true;
       if (isPlan(body.plan)) return body.plan;
       const seed = buildSeed();
-      await writePlan(seed);
+      try {
+        await writePlan(seed);
+      } catch (error) {
+        console.error(error);
+        throw error;
+      }
       return seed;
     })
     .catch(() => loadState());
