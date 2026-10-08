@@ -32,10 +32,7 @@ export function loadPlan() {
   return fetch('/api/plan', { headers: { accept: 'application/json' } })
     .then(async response => {
       const type = response.headers.get('content-type') || '';
-      if (!response.ok || !type.includes('application/json')) {
-        if (import.meta.env.PROD) throw new Error('The strategy database is not available.');
-        return loadState();
-      }
+      if (!response.ok || !type.includes('application/json')) return loadState();
       const body = await response.json();
       remote = true;
       if (isPlan(body.plan)) return body.plan;
@@ -43,10 +40,7 @@ export function loadPlan() {
       await writePlan(seed);
       return seed;
     })
-    .catch(error => {
-      if (import.meta.env.PROD) throw error;
-      return loadState();
-    });
+    .catch(() => loadState());
 }
 
 let planPromise;
