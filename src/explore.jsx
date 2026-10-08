@@ -89,7 +89,12 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
         </p>
       )}
       <div className="initiative-meta">
-        <span>{initiative.verified}/{initiative.movs.length} verification checks complete</span>
+        <span>
+          {initiative.verified}/{initiative.movs.length} verification checks complete
+          {initiative.plannedQuarters?.length ? ` · Planned ${initiative.plannedQuarters.join(' ')}` : ''}
+          {initiative.budget === true ? ' · Budget required' : ''}
+          {initiative.budget === false ? ' · No budget' : ''}
+        </span>
         {initiative.external?.url ? (
           <a href={initiative.external.url} target="_blank" rel="noreferrer">
             <ExternalLink size={13} />
@@ -145,6 +150,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
                 {objective.supporting.length ? objective.supporting.map(division => <DivisionTag key={division.id} division={division} compact />) : <em>None</em>}
               </div>
             </div>
+            {objective.accountable && <div><span>Accountable</span><b>{objective.accountable}</b></div>}
           </div>
           <KeyResultList keyResults={objective.keyResults} onProgress={onKeyResult} onSaveMean={onSaveMean} onAddMean={onAddMean} onRemoveMean={onRemoveMean} />
           {objective.initiatives.map(initiative => (

@@ -9,6 +9,7 @@ import {
 } from './model.js';
 import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
+import { ImportDialog } from './ImportPanel.jsx';
 import { DivisionTag, Empty, Field, Horizon, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
 
 const NAV = [
@@ -69,6 +70,7 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [objectiveFilters, setObjectiveFilters] = useState(blankObjectives);
   const [initiativeFilters, setInitiativeFilters] = useState(blankInitiatives);
+  const [importOpen, setImportOpen] = useState(false);
   const view = useMemo(() => decorate(state), [state]);
   const goal = view.goals.find(item => item.id === goalId) || null;
   const objective = view.objectives.find(item => item.id === objectiveId) || null;
@@ -239,18 +241,30 @@ export default function App() {
         </header>
         {page === 'Strategy' && <StrategyPage view={view} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
         {page === 'Goal' && <GoalPage goal={goal} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
-        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} />}
+        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} onImport={() => setImportOpen(true)} />}
         {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
         {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
         {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
         {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: divisionId, role: 'any' }); go('Objectives'); }} />}
         {page === 'Reports' && <ReportsPage view={view} onOpen={id => { const match = view.objectives.find(item => item.id === id); if (match) openGoal(match.goalId, id); }} />}
-        {page === 'Settings' && <SettingsPage state={state} setState={setState} />}
+        {page === 'Settings' && <SettingsPage state={state} setState={setState} onImport={() => setImportOpen(true)} />}
       </main>
       {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
       {modal?.type === 'goal' && <GoalModal pillars={state.pillars} goal={modal.goal} onClose={() => setModal(null)} onSave={form => modal.goal ? actions.saveGoal(modal.goal.id, form) : actions.addGoal(form)} />}
       {modal?.type === 'objective' && <ObjectiveModal goals={view.goals} divisions={state.divisions} presetGoalId={modal.goalId} onClose={() => setModal(null)} onSave={actions.addObjective} />}
       {objective && <ObjectiveDrawer objective={objective} divisions={state.divisions} actions={actions} onClose={() => setObjectiveId(null)} />}
+      {importOpen && (
+        <ImportDialog
+          state={state}
+          onClose={() => setImportOpen(false)}
+          onApply={next => {
+            setState(next);
+            setImportOpen(false);
+            setObjectiveFilters({ ...blankObjectives, year: '2027' });
+            go('Objectives');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -423,7 +437,7 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
   );
 }
 
-function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
+function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
   const rows = view.objectives.filter(objective => {
     if (filters.pillar !== 'all' && objective.pillar?.id !== filters.pillar) return false;
     if (filters.year !== 'all' && objective.year !== filters.year) return false;
@@ -441,7 +455,10 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
           <h1>Objectives</h1>
           <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
         </div>
-        <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+        <div className="hero-actions">
+          <button className="secondary" type="button" onClick={onImport}>Import 2027</button>
+          <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+        </div>
       </div>
       <FilterBar>
         <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
@@ -683,7 +700,7 @@ function ReportsPage({ view, onOpen }) {
   );
 }
 
-function SettingsPage({ state, setState }) {
+function SettingsPage({ state, setState, onImport }) {
   const [company, setCompany] = useState(state.company);
   const [profile, setProfile] = useState(state.profile);
   const [note, setNote] = useState('');
@@ -716,6 +733,13 @@ function SettingsPage({ state, setState }) {
           </form>
         </article>
       </div>
+      <article className="module-card restore-card">
+        <div>
+          <b>Import the 2027 annual work plan</b>
+          <p>Bring in objectives, key results, team initiatives, and responsible departments from the Annual Work Plan 2027_Working sheet.</p>
+        </div>
+        <button type="button" className="secondary" onClick={onImport}>Import 2027</button>
+      </article>
       <article className="module-card restore-card">
         <div>
           <b>Restore the sample plan</b>
