@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Building2, ChevronDown, X } from 'lucide-react';
-import { QUARTERS, STATUS_TONE } from './model.js';
+import { QUARTERS, STATUS_TONE, togglePlannedQuarter } from './model.js';
 
 export function Progress({ value, compact }) {
   const score = Math.max(0, Math.min(100, Math.round(value || 0)));
@@ -33,6 +33,21 @@ export function DivisionTag({ division, compact }) {
       <Building2 size={12} />
       {division.name}
     </span>
+  );
+}
+
+export function QuarterTicks({ quarters, onChange, label = 'Planned quarters' }) {
+  const selected = new Set(quarters || []);
+  return (
+    <div className="quarter-ticks" role="group" aria-label={label}>
+      <span>{label}</span>
+      {QUARTERS.map(quarter => (
+        <label key={quarter}>
+          <input type="checkbox" checked={selected.has(quarter)} onChange={() => onChange(togglePlannedQuarter(quarters, quarter))} />
+          <span>{quarter}</span>
+        </label>
+      ))}
+    </div>
   );
 }
 
