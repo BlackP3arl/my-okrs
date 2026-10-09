@@ -5,12 +5,12 @@ import {
 } from 'lucide-react';
 import {
   CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
-  involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
+  divisionSelection, involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
 } from './model.js';
 import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
 import { ImportDialog } from './ImportPanel.jsx';
-import { DivisionTag, Empty, Field, Horizon, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
+import { DivisionTag, Empty, Field, Horizon, MultiSelectFilter, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
 
 const NAV = [
   ['Strategy', LayoutDashboard],
@@ -27,7 +27,7 @@ const STATUSES = ['Achieved', 'On track', 'At risk', 'Off track', 'Not started']
 const INIT_STATUSES = ['Done', 'In progress', 'Blocked', 'Not started'];
 const YEARS = ['2025', '2026', '2027', '2028', '2029', '2030'];
 
-const blankObjectives = { q: '', pillar: 'all', division: 'all', role: 'any', status: 'all', year: 'all' };
+const blankObjectives = { q: '', pillar: 'all', division: [], role: 'any', status: 'all', year: 'all' };
 const blankInitiatives = { q: '', pillar: 'all', division: 'all', status: 'all', year: 'all', cross: false };
 
 function initials(name) {
@@ -245,7 +245,7 @@ export default function App() {
         {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
         {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
         {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
-        {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: divisionId, role: 'any' }); go('Objectives'); }} />}
+        {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: [divisionId], role: 'any' }); go('Objectives'); }} />}
         {page === 'Reports' && <ReportsPage view={view} onOpen={id => { const match = view.objectives.find(item => item.id === id); if (match) openGoal(match.goalId, id); }} />}
         {page === 'Settings' && <SettingsPage state={state} setState={setState} onImport={() => setImportOpen(true)} />}
       </main>
@@ -438,15 +438,16 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
 }
 
 function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
+  const divisions = divisionSelection(filters.division);
   const rows = view.objectives.filter(objective => {
     if (filters.pillar !== 'all' && objective.pillar?.id !== filters.pillar) return false;
     if (filters.year !== 'all' && objective.year !== filters.year) return false;
     if (filters.status !== 'all' && objective.status !== filters.status) return false;
-    if (!involvesDivision(objective, filters.division, filters.role)) return false;
+    if (!involvesDivision(objective, divisions, filters.role)) return false;
     const haystack = `${objective.code} ${objective.title} ${objective.division?.name} ${objective.goal?.title} ${objective.supporting.map(division => division.name).join(' ')} ${objective.keyResults.map(item => `${item.title} ${(item.means || []).map(mean => mean.title).join(' ')}`).join(' ')}`.toLowerCase();
     return haystack.includes(filters.q.toLowerCase());
   }).sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
-  const active = ['pillar', 'division', 'status', 'year'].filter(key => filters[key] !== 'all').length + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
+  const active = ['pillar', 'status', 'year'].filter(key => filters[key] !== 'all').length + (divisions.length ? 1 : 0) + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
   return (
     <section className="content">
       <div className="hero">
@@ -462,12 +463,13 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
       </div>
       <FilterBar>
         <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
-        <SelectFilter label="Division" value={filters.division} onChange={division => setFilters({ ...filters, division })} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(division => ({ value: division.id, label: division.name }))]} />
+        <MultiSelectFilter label="Division" values={divisions} onChange={division => setFilters({ ...filters, division })} options={view.divisions.map(division => ({ value: division.id, label: division.name }))} emptyLabel="All divisions" />
         <SelectFilter label="Division role" value={filters.role} onChange={role => setFilters({ ...filters, role })} options={[{ value: 'any', label: 'Any role' }, { value: 'responsible', label: 'Responsible' }, { value: 'supporting', label: 'Supporting' }, { value: 'executing', label: 'Executing an initiative' }]} />
         <SelectFilter label="Status" value={filters.status} onChange={status => setFilters({ ...filters, status })} options={[{ value: 'all', label: 'All statuses' }, ...STATUSES.map(status => ({ value: status, label: status }))]} />
         <SelectFilter label="Year" value={filters.year} onChange={year => setFilters({ ...filters, year })} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(year => ({ value: year, label: year }))]} />
         <button type="button" className="text-reset" disabled={!active} onClick={() => setFilters(blankObjectives)}>Reset{active ? ` (${active})` : ''}</button>
       </FilterBar>
+      <p className="result-count">{rows.length} objective{rows.length === 1 ? '' : 's'}</p>
       <div className="register">
         <div className="register-row head"><span>Objective</span><span>Priority / goal</span><span>Responsible</span><span>Year</span><span>Quarters</span><span>Progress</span><span>Status</span></div>
         {rows.map(objective => (

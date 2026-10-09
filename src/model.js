@@ -672,8 +672,13 @@ export function decorate(state) {
   };
 }
 
-export function involvesDivision(objective, divisionId, role) {
-  if (!divisionId || divisionId === 'all') return true;
+export function divisionSelection(value) {
+  if (value == null || value === '' || value === 'all') return [];
+  const ids = Array.isArray(value) ? value : [value];
+  return [...new Set(ids.filter(id => id && id !== 'all'))];
+}
+
+function matchesDivision(objective, divisionId, role) {
   const responsible = objective.divisionId === divisionId;
   const supporting = (objective.supportingIds || []).includes(divisionId);
   const executing = objective.initiatives?.some(item => item.divisionId === divisionId);
@@ -681,6 +686,12 @@ export function involvesDivision(objective, divisionId, role) {
   if (role === 'supporting') return supporting;
   if (role === 'executing') return executing;
   return responsible || supporting || executing;
+}
+
+export function involvesDivision(objective, divisionId, role) {
+  const ids = divisionSelection(divisionId);
+  if (!ids.length) return true;
+  return ids.some(id => matchesDivision(objective, id, role));
 }
 
 export function removeGoal(state, goalId) {

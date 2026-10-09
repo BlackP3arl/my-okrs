@@ -122,7 +122,18 @@
 .filter-field{display:flex;flex-direction:column;gap:5px;min-width:160px}
 .filter-field span,.picker-field>span,.drawer-form label>span,.drawer-initiative label>span,.quarter-edit span,.external-edit span,.new-initiative b{font-size:11px;font-weight:700;color:#5c6370}
 .filter-field select,.filter-field input,.picker-block>input,.drawer-form input,.drawer-form select,.drawer-form textarea,.drawer-initiative input,.drawer-initiative select,.quarter-edit input,.external-edit input,.new-initiative input,.new-initiative select,.review-row input{border:1px solid #e1e3e8;border-radius:8px;padding:8px 10px;background:#fff;font-size:12px;outline:none}
-.filter-field select:focus,.filter-field input:focus,.drawer-form input:focus,.drawer-form textarea:focus,.review-row input:focus{border-color:#4B56F9;box-shadow:0 0 0 3px #E4E6F8}
+.filter-field select:focus,.filter-field input:focus,.drawer-form input:focus,.drawer-form textarea:focus,.review-row input:focus,.multi-filter-button:focus-visible,.multi-filter-menu input:focus{border-color:#4B56F9;box-shadow:0 0 0 3px #E4E6F8}
+.multi-filter{position:relative;min-width:220px}
+.multi-filter-button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:34px;border:1px solid #e1e3e8;border-radius:8px;padding:8px 10px;background:#fff;font-size:12px;color:#2c303a;text-align:left}
+.multi-filter-button em{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-filter-button svg{flex:0 0 auto;color:#80848e}
+.multi-filter-menu{position:absolute;z-index:30;top:calc(100% + 4px);left:0;width:max(100%,280px);max-height:320px;overflow:auto;background:#fff;border:1px solid #e1e3e8;border-radius:10px;box-shadow:0 12px 28px #262b3a1f;padding:6px;display:flex;flex-direction:column;gap:2px}
+.multi-filter-menu>input{margin-bottom:4px}
+.multi-filter-menu>button,.multi-filter-menu label{display:flex;align-items:center;gap:8px;width:100%;border:0;border-radius:8px;background:transparent;padding:7px 8px;text-align:left;font-size:12px;font-weight:500;color:#2c303a;cursor:pointer}
+.multi-filter-menu>button.selected,.multi-filter-menu label:hover,.multi-filter-menu>button:hover{background:#F7F8FC}
+.multi-filter-menu label span{font-size:12px;font-weight:500;color:#2c303a}
+.multi-filter-menu input[type=checkbox]{accent-color:#010670;width:14px;height:14px;margin:0}
+.multi-filter-menu p{margin:6px 8px;color:#80848e;font-size:12px}
 .text-reset{border:0;background:transparent;color:#010670;font-weight:700;font-size:12px;margin-bottom:8px}
 .text-reset:disabled{color:#b0b4bc}
 .result-count{margin:0 0 8px;color:#80848e;font-size:12px}
