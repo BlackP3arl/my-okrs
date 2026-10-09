@@ -147,7 +147,7 @@
 .review-row label span{font-size:10px;font-weight:700;color:#80848e}
 .alignment-pillar{background:#fff;border:1px solid var(--border);border-radius:14px;overflow:hidden}
 .alignment-pillar>header{display:grid;grid-template-columns:36px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:14px;background:color-mix(in srgb,var(--accent) 8%,white)}
-.alignment-pillar>header>span{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 14px Outfit}
+.alignment-pillar>header>span{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--badge, var(--accent));color:var(--ink, #fff);font:800 14px Outfit}
 .alignment-pillar b{display:block;font:700 14px Outfit}
 .alignment-pillar small{color:#667085;font-size:11px}
 .alignment-goal>button{width:100%;border:0;border-top:1px solid #eef0f3;background:#fff;display:grid;grid-template-columns:16px auto minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:12px 14px;text-align:left;color:inherit}

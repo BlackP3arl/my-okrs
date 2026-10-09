@@ -60,8 +60,10 @@ export const PILLARS = [
     code: '4',
     name: 'Organizational Development and Resilience',
     intent: 'Governance, people, security, and the operating environment that keep the office dependable.',
-    color: '#EA4927',
-    soft: '#FDECEA',
+    color: '#8E3458',
+    soft: '#FDE8F2',
+    badge: '#F4B8CC',
+    ink: '#8E3458',
   },
 ];
 
@@ -527,7 +529,14 @@ export function saveState(state) {
 
 function withPillarTheme(pillar) {
   const theme = PILLARS.find(item => item.id === pillar.id);
-  return theme ? { ...pillar, color: theme.color, soft: theme.soft } : pillar;
+  if (!theme) return pillar;
+  return {
+    ...pillar,
+    color: theme.color,
+    soft: theme.soft,
+    badge: theme.badge || theme.color,
+    ink: theme.ink || '#fff',
+  };
 }
 
 export function decorate(state) {

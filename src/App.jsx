@@ -337,7 +337,7 @@ function StrategyPage({ view, openGoal, addGoal, showCross }) {
         {view.pillars.map(pillar => (
           <section key={pillar.id} className="pillar-col" style={{ '--accent': pillar.color, '--soft': pillar.soft }}>
             <header>
-              <div className="pillar-index" style={{ background: pillar.color }}>{pillar.code}</div>
+              <div className="pillar-index" style={{ background: pillar.badge || pillar.color, color: pillar.ink || '#fff' }}>{pillar.code}</div>
               <h2>{pillar.name}</h2>
               <p>{pillar.intent}</p>
             </header>

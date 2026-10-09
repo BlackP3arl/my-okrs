@@ -472,7 +472,7 @@ export function AlignmentTree({ pillars, year, onProgress, onAddVerification, on
     <div className="alignment-tree">
       {pillars.map(pillar => (
         <section key={pillar.id} className="alignment-pillar">
-          <header style={{ '--accent': pillar.color }}>
+          <header style={{ '--accent': pillar.color, '--badge': pillar.badge || pillar.color, '--ink': pillar.ink || '#fff' }}>
             <span>{pillar.code}</span>
             <div><b>{pillar.name}</b><small>{pillar.goals.length} strategic goals · {pillar.progress}%</small></div>
             <Progress value={pillar.progress} />
