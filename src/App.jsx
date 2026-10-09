@@ -9,8 +9,9 @@ import {
 } from './model.js';
 import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
+import { downloadObjectiveReport } from './exportPlan.js';
 import { ImportDialog } from './ImportPanel.jsx';
-import { DivisionTag, Empty, Field, Horizon, MultiSelectFilter, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
+import { DivisionTag, Empty, Field, Horizon, MultiSelectFilter, Progress, QuarterPips, QuarterTicks, Ring, SelectFilter, Status } from './ui.jsx';
 
 const NAV = [
   ['Strategy', LayoutDashboard],
@@ -124,7 +125,7 @@ export default function App() {
           ...current,
           objectives: [...current.objectives, { ...objective, id, code: nextObjectiveCode(current.objectives, goal) }],
           keyResults: [...(current.keyResults || []), ...titles.map(title => ({ id: uid('kr'), objectiveId: id, title, progress: 0 }))],
-          initiatives: [...current.initiatives, { id: uid('init'), objectiveId: id, title: form.title, divisionId: form.divisionId, external: null, blocked: false }],
+          initiatives: [...current.initiatives, { id: uid('init'), objectiveId: id, title: form.title, divisionId: form.divisionId, external: null, blocked: false, plannedQuarters: [] }],
         };
       });
       setModal(null);
@@ -242,7 +243,7 @@ export default function App() {
         {page === 'Strategy' && <StrategyPage view={view} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
         {page === 'Goal' && <GoalPage goal={goal} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
         {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} onImport={() => setImportOpen(true)} />}
-        {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
+        {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} onPlanQuarters={(id, plannedQuarters) => actions.saveInitiative(id, { plannedQuarters })} />}
         {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
         {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
         {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: [divisionId], role: 'any' }); go('Objectives'); }} />}
@@ -428,6 +429,7 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
         onManage={onManage}
         onProgress={(id, progress) => actions.saveVerification(id, progress)}
         onAddVerification={actions.addVerification}
+        onPlanQuarters={(id, plannedQuarters) => actions.saveInitiative(id, { plannedQuarters })}
         onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })}
         onSaveMean={actions.saveKrMean}
         onAddMean={actions.addKrMean}
@@ -457,6 +459,7 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
           <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
         </div>
         <div className="hero-actions">
+          <button className="secondary" type="button" onClick={() => downloadObjectiveReport(rows)} title="Download the objectives currently shown, with key results, initiatives, and completion"><Download size={16} /> Export Excel</button>
           <button className="secondary" type="button" onClick={onImport}>Import 2027</button>
           <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
         </div>
@@ -489,7 +492,7 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
   );
 }
 
-function InitiativesPage({ view, filters, setFilters, onOpen }) {
+function InitiativesPage({ view, filters, setFilters, onOpen, onPlanQuarters }) {
   const divisions = divisionSelection(filters.division);
   const rows = view.initiatives.filter(initiative => {
     if (filters.cross && !initiative.crossDivision) return false;
@@ -520,10 +523,13 @@ function InitiativesPage({ view, filters, setFilters, onOpen }) {
       <p className="result-count">{rows.length} initiatives</p>
       <div className="initiative-register">
         {rows.map(initiative => (
-          <button key={initiative.id} type="button" className={`initiative-row ${initiative.crossDivision ? 'cross' : ''}`} onClick={() => onOpen(initiative.objectiveId)}>
+          <article key={initiative.id} className={`initiative-row ${initiative.crossDivision ? 'cross' : ''}`}>
             <div>
-              <b>{initiative.title}</b>
-              <small>{initiative.objectiveCode} · {initiative.objectiveTitle}</small>
+              <button type="button" className="initiative-open" onClick={() => onOpen(initiative.objectiveId)}>
+                <b>{initiative.title}</b>
+                <small>{initiative.objectiveCode} · {initiative.objectiveTitle}</small>
+              </button>
+              <QuarterTicks quarters={initiative.plannedQuarters} onChange={plannedQuarters => onPlanQuarters(initiative.id, plannedQuarters)} />
             </div>
             <div className="stack-tags">
               <span>Executes</span>
@@ -534,7 +540,7 @@ function InitiativesPage({ view, filters, setFilters, onOpen }) {
             <div><b>{initiative.external?.system || 'Not linked'}</b><small>{initiative.external?.key || 'No external project'}</small></div>
             <Progress value={initiative.progress} compact />
             <Status value={initiative.status} />
-          </button>
+          </article>
         ))}
         {!rows.length && <Empty title="No initiatives match" detail="Clear the cross-division filter or choose another division." />}
       </div>
@@ -602,7 +608,7 @@ function AlignmentPage({ view, actions, onManage }) {
         </div>
         <div className="year-switch">{['all', '2025', '2026', '2027'].map(item => <button key={item} type="button" className={year === item ? 'active' : ''} onClick={() => setYear(item)}>{item === 'all' ? 'All years' : item}</button>)}</div>
       </div>
-      <AlignmentTree pillars={view.pillars} year={year} onManage={onManage} onProgress={(id, progress) => actions.saveVerification(id, progress)} onAddVerification={actions.addVerification} onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })} onSaveMean={actions.saveKrMean} onAddMean={actions.addKrMean} onRemoveMean={actions.deleteKrMean} />
+      <AlignmentTree pillars={view.pillars} year={year} onManage={onManage} onProgress={(id, progress) => actions.saveVerification(id, progress)} onAddVerification={actions.addVerification} onPlanQuarters={(id, plannedQuarters) => actions.saveInitiative(id, { plannedQuarters })} onKeyResult={(id, progress) => actions.saveKeyResult(id, { progress })} onSaveMean={actions.saveKrMean} onAddMean={actions.addKrMean} onRemoveMean={actions.deleteKrMean} />
     </section>
   );
 }

@@ -237,6 +237,13 @@ export function blankQuarters() {
   return { Q1: { progress: 0, note: '' }, Q2: { progress: 0, note: '' }, Q3: { progress: 0, note: '' }, Q4: { progress: 0, note: '' } };
 }
 
+export function togglePlannedQuarter(current, quarter) {
+  const selected = new Set(Array.isArray(current) ? current : []);
+  if (selected.has(quarter)) selected.delete(quarter);
+  else selected.add(quarter);
+  return QUARTERS.filter(item => selected.has(item));
+}
+
 const DIVISION_TONES = [
   ['#010670', '#E6E7F4'],
   ['#4B56F9', '#EEEEFE'],
