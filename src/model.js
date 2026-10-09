@@ -678,6 +678,11 @@ export function divisionSelection(value) {
   return [...new Set(ids.filter(id => id && id !== 'all'))];
 }
 
+export function includesDivision(divisionId, selection) {
+  const ids = divisionSelection(selection);
+  return !ids.length || ids.includes(divisionId);
+}
+
 function matchesDivision(objective, divisionId, role) {
   const responsible = objective.divisionId === divisionId;
   const supporting = (objective.supportingIds || []).includes(divisionId);

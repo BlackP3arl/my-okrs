@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
-  divisionSelection, involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
+  divisionSelection, includesDivision, involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
 } from './model.js';
 import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
@@ -28,7 +28,7 @@ const INIT_STATUSES = ['Done', 'In progress', 'Blocked', 'Not started'];
 const YEARS = ['2025', '2026', '2027', '2028', '2029', '2030'];
 
 const blankObjectives = { q: '', pillar: 'all', division: [], role: 'any', status: 'all', year: 'all' };
-const blankInitiatives = { q: '', pillar: 'all', division: 'all', status: 'all', year: 'all', cross: false };
+const blankInitiatives = { q: '', pillar: 'all', division: [], status: 'all', year: 'all', cross: false };
 
 function initials(name) {
   return String(name || '?').split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase();
@@ -490,10 +490,11 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
 }
 
 function InitiativesPage({ view, filters, setFilters, onOpen }) {
+  const divisions = divisionSelection(filters.division);
   const rows = view.initiatives.filter(initiative => {
     if (filters.cross && !initiative.crossDivision) return false;
     if (filters.pillar !== 'all' && initiative.pillarId !== filters.pillar) return false;
-    if (filters.division !== 'all' && initiative.divisionId !== filters.division) return false;
+    if (!includesDivision(initiative.divisionId, divisions)) return false;
     if (filters.status !== 'all' && initiative.status !== filters.status) return false;
     if (filters.year !== 'all' && initiative.objectiveYear !== filters.year) return false;
     const haystack = `${initiative.title} ${initiative.objectiveTitle} ${initiative.division?.name} ${initiative.external?.key || ''} ${initiative.external?.system || ''}`.toLowerCase();
@@ -511,7 +512,7 @@ function InitiativesPage({ view, filters, setFilters, onOpen }) {
       <FilterBar>
         <label className="filter-field search-field"><span>Search</span><input value={filters.q} onChange={event => setFilters({ ...filters, q: event.target.value })} placeholder="Initiative, objective, or project key" /></label>
         <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
-        <SelectFilter label="Executing division" value={filters.division} onChange={division => setFilters({ ...filters, division })} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(division => ({ value: division.id, label: division.name }))]} />
+        <MultiSelectFilter label="Executing division" values={divisions} onChange={division => setFilters({ ...filters, division })} options={view.divisions.map(division => ({ value: division.id, label: division.name }))} emptyLabel="All divisions" />
         <SelectFilter label="Status" value={filters.status} onChange={status => setFilters({ ...filters, status })} options={[{ value: 'all', label: 'All statuses' }, ...INIT_STATUSES.map(status => ({ value: status, label: status }))]} />
         <SelectFilter label="Objective year" value={filters.year} onChange={year => setFilters({ ...filters, year })} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(year => ({ value: year, label: year }))]} />
         <label className="check-line filter-check"><input type="checkbox" checked={filters.cross} onChange={event => setFilters({ ...filters, cross: event.target.checked })} /><span>Cross-division only</span></label>
@@ -545,8 +546,9 @@ function ReviewsPage({ view, actions, onOpen }) {
   const [year, setYear] = useState(String(CURRENT_YEAR));
   const [quarter, setQuarter] = useState(CURRENT_QUARTER);
   const [dueOnly, setDueOnly] = useState(true);
-  const [division, setDivision] = useState('all');
-  const rows = view.objectives.filter(objective => objective.year === year && (division === 'all' || objective.divisionId === division) && (!dueOnly || !objective.quarters?.[quarter]?.note));
+  const [division, setDivision] = useState([]);
+  const divisions = divisionSelection(division);
+  const rows = view.objectives.filter(objective => objective.year === year && includesDivision(objective.divisionId, divisions) && (!dueOnly || !objective.quarters?.[quarter]?.note));
   return (
     <section className="content">
       <div className="hero">
@@ -559,7 +561,7 @@ function ReviewsPage({ view, actions, onOpen }) {
       <div className="review-toolbar">
         <SelectFilter label="Year" value={year} onChange={setYear} options={YEARS.map(item => ({ value: item, label: item }))} />
         <div className="year-switch">{['Q1', 'Q2', 'Q3', 'Q4'].map(item => <button key={item} type="button" className={quarter === item ? 'active' : ''} onClick={() => setQuarter(item)}>{item}</button>)}</div>
-        <SelectFilter label="Responsible division" value={division} onChange={setDivision} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(item => ({ value: item.id, label: item.name }))]} />
+        <MultiSelectFilter label="Responsible division" values={divisions} onChange={setDivision} options={view.divisions.map(item => ({ value: item.id, label: item.name }))} emptyLabel="All divisions" />
         <label className="check-line filter-check"><input type="checkbox" checked={dueOnly} onChange={event => setDueOnly(event.target.checked)} /><span>Due only</span></label>
       </div>
       <div className="review-list">
