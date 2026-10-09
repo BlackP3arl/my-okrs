@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, X } from 'lucide-react';
+import { useAuth } from './authContext.js';
 import { CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, QUARTERS, blankQuarters, uid } from './model.js';
 import { DivisionTag, Empty, Field, Horizon, Modal, Progress, QuarterPips, Status } from './ui.jsx';
 
 function MovEditor({ mov, onProgress, onDelete }) {
+  const { canEdit } = useAuth();
   return (
     <div className="mov-row">
       <div className="mov-copy">
@@ -11,15 +13,16 @@ function MovEditor({ mov, onProgress, onDelete }) {
         <b>{mov.title}</b>
       </div>
       <div className="mov-score">
-        <input aria-label={`Progress for ${mov.title}`} type="range" min="0" max="100" value={mov.progress} onChange={event => onProgress(mov.id, Number(event.target.value))} />
+        <input aria-label={`Progress for ${mov.title}`} type="range" min="0" max="100" value={mov.progress} disabled={!canEdit} onChange={event => onProgress(mov.id, Number(event.target.value))} />
         <strong>{mov.progress}%</strong>
-        {onDelete && <button type="button" className="delete-small" onClick={() => onDelete(mov.id)} aria-label="Remove verification check"><Trash2 size={14} /></button>}
+        {canEdit && onDelete && <button type="button" className="delete-small" onClick={() => onDelete(mov.id)} aria-label="Remove verification check"><Trash2 size={14} /></button>}
       </div>
     </div>
   );
 }
 
 function KrMeansEditor({ means, label, onSave, onAdd, onRemove }) {
+  const { canEdit } = useAuth();
   const [draft, setDraft] = useState('');
   return (
     <div className="kr-means">
@@ -29,21 +32,25 @@ function KrMeansEditor({ means, label, onSave, onAdd, onRemove }) {
           <input
             aria-label={`${label} means of verification ${index + 1}`}
             value={mean.title}
+            disabled={!canEdit}
             onChange={event => onSave(mean.id, event.target.value)}
             placeholder="Means of verification"
           />
-          <button type="button" className="delete-small" aria-label={`${label} remove means of verification ${index + 1}`} onClick={() => onRemove(mean.id)}><Trash2 size={14} /></button>
+          {canEdit && <button type="button" className="delete-small" aria-label={`${label} remove means of verification ${index + 1}`} onClick={() => onRemove(mean.id)}><Trash2 size={14} /></button>}
         </div>
       ))}
-      <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!draft.trim()) return; onAdd(draft.trim()); setDraft(''); }}>
-        <input aria-label={`${label} add a means of verification`} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Add a means of verification" />
-        <button type="submit"><Plus size={14} /> Add</button>
-      </form>
+      {canEdit && (
+        <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!draft.trim()) return; onAdd(draft.trim()); setDraft(''); }}>
+          <input aria-label={`${label} add a means of verification`} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Add a means of verification" />
+          <button type="submit"><Plus size={14} /> Add</button>
+        </form>
+      )}
     </div>
   );
 }
 
 function KeyResultList({ keyResults, onProgress, onSaveMean, onAddMean, onRemoveMean }) {
+  const { canEdit } = useAuth();
   return (
     <section className="kr-block">
       <div className="section-head"><b>Key results</b><span>{keyResults.length} results score this objective</span></div>
@@ -53,7 +60,7 @@ function KeyResultList({ keyResults, onProgress, onSaveMean, onAddMean, onRemove
             <span className="kr-code">KR{index + 1}</span>
             <b>{item.title}</b>
             <div className="mov-score">
-              <input aria-label={`Progress for ${item.title}`} type="range" min="0" max="100" value={item.progress} onChange={event => onProgress(item.id, Number(event.target.value))} />
+              <input aria-label={`Progress for ${item.title}`} type="range" min="0" max="100" value={item.progress} disabled={!canEdit} onChange={event => onProgress(item.id, Number(event.target.value))} />
               <strong>{item.progress}%</strong>
             </div>
           </div>
@@ -71,6 +78,7 @@ function KeyResultList({ keyResults, onProgress, onSaveMean, onAddMean, onRemove
 }
 
 export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true }) {
+  const { canEdit } = useAuth();
   const [title, setTitle] = useState('');
   return (
     <article className={`initiative-panel ${initiative.crossDivision ? 'cross' : ''}`}>
@@ -106,7 +114,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
         {initiative.movs.map(mov => <MovEditor key={mov.id} mov={mov} onProgress={onProgress} />)}
         {!initiative.movs.length && <p className="quiet">No verification checks yet.</p>}
       </div>
-      {showAdd && (
+      {canEdit && showAdd && (
         <form className="inline-create" onSubmit={event => { event.preventDefault(); if (!title.trim()) return; onAdd(initiative.id, title.trim()); setTitle(''); }}>
           <input value={title} onChange={event => setTitle(event.target.value)} placeholder="Add a verification check" />
           <button type="submit"><Plus size={14} /> Add</button>
@@ -117,6 +125,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
 }
 
 export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
+  const { canEdit } = useAuth();
   return (
     <article className={`objective-card ${open ? 'open' : ''}`} id={`objective-${objective.id}`}>
       <button type="button" className="objective-main" onClick={onToggle}>
@@ -157,7 +166,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
             <InitiativePanel key={initiative.id} initiative={initiative} onProgress={onProgress} onAdd={onAddVerification} />
           ))}
           <div className="detail-actions">
-            <button type="button" className="secondary" onClick={onManage}>Manage objective</button>
+            <button type="button" className="secondary" onClick={onManage}>{canEdit ? 'Manage objective' : 'View objective'}</button>
           </div>
         </div>
       )}
@@ -190,6 +199,7 @@ export function GoalCascade({ goal, year, openObjective, setOpenObjective, onMan
 }
 
 function DivisionButtons({ divisions, selected, onChange }) {
+  const { canEdit } = useAuth();
   const [query, setQuery] = useState('');
   const visible = divisions.filter(division => division.name.toLowerCase().includes(query.toLowerCase()));
   const toggle = id => onChange(selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]);
@@ -198,7 +208,7 @@ function DivisionButtons({ divisions, selected, onChange }) {
       <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a division" />
       <div className="division-picker">
         {visible.map(division => (
-          <button type="button" key={division.id} className={selected.includes(division.id) ? 'selected' : ''} onClick={() => toggle(division.id)}>
+          <button type="button" key={division.id} className={selected.includes(division.id) ? 'selected' : ''} disabled={!canEdit} onClick={() => toggle(division.id)}>
             {division.name}
           </button>
         ))}
@@ -299,6 +309,7 @@ function snapshot(objective) {
 }
 
 export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
+  const { canEdit } = useAuth();
   const [draft, setDraft] = useState(() => snapshot(objective));
   const [initiative, setInitiative] = useState({ title: '', divisionId: objective.divisionId, system: '', key: '', url: '' });
   const seen = useRef(objective.id);
@@ -336,18 +347,18 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
         <div className="drawer-head">
           <span className="drawer-label">OBJECTIVE {objective.code}</span>
           <div className="drawer-actions">
-            <button type="button" className="icon-button danger-icon" aria-label="Delete objective" onClick={() => actions.deleteObjective(objective.id)}><Trash2 size={16} /></button>
+            {canEdit && <button type="button" className="icon-button danger-icon" aria-label="Delete objective" onClick={() => actions.deleteObjective(objective.id)}><Trash2 size={16} /></button>}
             <button type="button" className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button>
           </div>
         </div>
         <form className="drawer-form" onSubmit={save}>
-          <Field label="Objective" full><input name="title" value={draft.title} onChange={set} required /></Field>
-          <Field label="Description" full><textarea name="description" value={draft.description} onChange={set} /></Field>
-          <Field label="Year"><select name="year" value={draft.year} onChange={set}>{['2025', '2026', '2027', '2028', '2029', '2030'].map(year => <option key={year}>{year}</option>)}</select></Field>
-          <Field label="Responsible division"><select name="divisionId" value={draft.divisionId} onChange={set}>{divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}</select></Field>
-          <label className="check-line full"><input type="checkbox" checked={draft.aspirational} onChange={event => setDraft(current => ({ ...current, aspirational: event.target.checked }))} /><span>Aspirational</span></label>
+          <Field label="Objective" full><input name="title" value={draft.title} onChange={set} required disabled={!canEdit} /></Field>
+          <Field label="Description" full><textarea name="description" value={draft.description} onChange={set} disabled={!canEdit} /></Field>
+          <Field label="Year"><select name="year" value={draft.year} onChange={set} disabled={!canEdit}>{['2025', '2026', '2027', '2028', '2029', '2030'].map(year => <option key={year}>{year}</option>)}</select></Field>
+          <Field label="Responsible division"><select name="divisionId" value={draft.divisionId} onChange={set} disabled={!canEdit}>{divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}</select></Field>
+          <label className="check-line full"><input type="checkbox" checked={draft.aspirational} disabled={!canEdit} onChange={event => setDraft(current => ({ ...current, aspirational: event.target.checked }))} /><span>Aspirational</span></label>
           <div className="full picker-field"><span>Supporting divisions</span><DivisionButtons divisions={divisions.filter(division => division.id !== draft.divisionId)} selected={draft.supportingIds} onChange={supportingIds => setDraft(current => ({ ...current, supportingIds }))} /></div>
-          <div className="form-actions"><button className="primary" type="submit">Save objective</button></div>
+          {canEdit && <div className="form-actions"><button className="primary" type="submit">Save objective</button></div>}
         </form>
 
         <section className="drawer-section">
@@ -357,12 +368,12 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
               <div className="kr-edit-item" key={item.id}>
                 <div className="kr-edit-row">
                   <span className="kr-code">KR{index + 1}</span>
-                  <input aria-label={`KR${index + 1} title`} value={item.title} onChange={event => actions.saveKeyResult(item.id, { title: event.target.value })} />
+                  <input aria-label={`KR${index + 1} title`} value={item.title} disabled={!canEdit} onChange={event => actions.saveKeyResult(item.id, { title: event.target.value })} />
                   <div className="mov-score">
-                    <input aria-label={`KR${index + 1} progress`} type="range" min="0" max="100" value={item.progress} onChange={event => actions.saveKeyResult(item.id, { progress: Number(event.target.value) })} />
+                    <input aria-label={`KR${index + 1} progress`} type="range" min="0" max="100" value={item.progress} disabled={!canEdit} onChange={event => actions.saveKeyResult(item.id, { progress: Number(event.target.value) })} />
                     <strong>{item.progress}%</strong>
                   </div>
-                  <button type="button" className="delete-small" disabled={objective.keyResults.length <= KEY_RESULT_MIN} aria-label={`Remove KR${index + 1}`} onClick={() => actions.deleteKeyResult(item.id)}><Trash2 size={14} /></button>
+                  {canEdit && <button type="button" className="delete-small" disabled={objective.keyResults.length <= KEY_RESULT_MIN} aria-label={`Remove KR${index + 1}`} onClick={() => actions.deleteKeyResult(item.id)}><Trash2 size={14} /></button>}
                 </div>
                 <KrMeansEditor
                   means={item.means || []}
@@ -373,7 +384,7 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
                 />
               </div>
             ))}
-            {objective.keyResults.length < KEY_RESULT_MAX && <AddKeyResult onAdd={title => actions.addKeyResult(objective.id, title)} />}
+            {canEdit && objective.keyResults.length < KEY_RESULT_MAX && <AddKeyResult onAdd={title => actions.addKeyResult(objective.id, title)} />}
           </div>
         </section>
 
@@ -385,8 +396,8 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
               return (
                 <label key={quarter}>
                   <span>{quarter}</span>
-                  <input type="number" min="0" max="100" value={report.progress} onChange={event => actions.saveQuarter(objective.id, quarter, { progress: Number(event.target.value) })} />
-                  <input value={report.note} placeholder="Review note" onChange={event => actions.saveQuarter(objective.id, quarter, { note: event.target.value })} />
+                  <input type="number" min="0" max="100" value={report.progress} disabled={!canEdit} onChange={event => actions.saveQuarter(objective.id, quarter, { progress: Number(event.target.value) })} />
+                  <input value={report.note} placeholder="Review note" disabled={!canEdit} onChange={event => actions.saveQuarter(objective.id, quarter, { note: event.target.value })} />
                 </label>
               );
             })}
@@ -399,7 +410,7 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
             <article key={item.id} className="drawer-initiative">
               <div className="drawer-initiative-head">
                 <strong>{item.title}</strong>
-                <button type="button" className="delete-small" onClick={() => actions.deleteInitiative(item.id)} aria-label="Delete initiative"><Trash2 size={14} /></button>
+                {canEdit && <button type="button" className="delete-small" onClick={() => actions.deleteInitiative(item.id)} aria-label="Delete initiative"><Trash2 size={14} /></button>}
               </div>
               {(item.plannedQuarters?.length || item.budget === true || item.budget === false) && (
                 <p className="import-note">
@@ -410,35 +421,37 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
                   ].filter(Boolean).join(' · ')}
                 </p>
               )}
-              <label><span>Title</span><input value={item.title} onChange={event => actions.saveInitiative(item.id, { title: event.target.value })} /></label>
+              <label><span>Title</span><input value={item.title} disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { title: event.target.value })} /></label>
               <label><span>Executing division</span>
-                <select value={item.divisionId} onChange={event => actions.saveInitiative(item.id, { divisionId: event.target.value })}>
+                <select value={item.divisionId} disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { divisionId: event.target.value })}>
                   {divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}
                 </select>
               </label>
-              <label className="check-line"><input type="checkbox" checked={Boolean(item.blocked)} onChange={event => actions.saveInitiative(item.id, { blocked: event.target.checked })} /><span>Blocked</span></label>
+              <label className="check-line"><input type="checkbox" checked={Boolean(item.blocked)} disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { blocked: event.target.checked })} /><span>Blocked</span></label>
               <div className="external-edit">
-                <label><span>External system</span><input value={item.external?.system || ''} placeholder="Jira, Azure DevOps, MS Planner" onChange={event => actions.saveInitiative(item.id, { external: { system: event.target.value, key: item.external?.key || '', url: item.external?.url || '' } })} /></label>
-                <label><span>Key</span><input value={item.external?.key || ''} onChange={event => actions.saveInitiative(item.id, { external: { system: item.external?.system || '', key: event.target.value, url: item.external?.url || '' } })} /></label>
-                <label><span>URL</span><input value={item.external?.url || ''} onChange={event => actions.saveInitiative(item.id, { external: { system: item.external?.system || '', key: item.external?.key || '', url: event.target.value } })} /></label>
+                <label><span>External system</span><input value={item.external?.system || ''} placeholder="Jira, Azure DevOps, MS Planner" disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { external: { system: event.target.value, key: item.external?.key || '', url: item.external?.url || '' } })} /></label>
+                <label><span>Key</span><input value={item.external?.key || ''} disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { external: { system: item.external?.system || '', key: event.target.value, url: item.external?.url || '' } })} /></label>
+                <label><span>URL</span><input value={item.external?.url || ''} disabled={!canEdit} onChange={event => actions.saveInitiative(item.id, { external: { system: item.external?.system || '', key: item.external?.key || '', url: event.target.value } })} /></label>
               </div>
               {item.movs.map(mov => (
                 <MovEditor key={mov.id} mov={mov} onProgress={actions.saveVerification} onDelete={actions.deleteVerification} />
               ))}
-              <AddMov onAdd={title => actions.addVerification(item.id, title)} />
+              {canEdit && <AddMov onAdd={title => actions.addVerification(item.id, title)} />}
             </article>
           ))}
-          <form className="new-initiative" onSubmit={addInitiative}>
-            <b>New team initiative</b>
-            <input value={initiative.title} onChange={event => setInitiative(current => ({ ...current, title: event.target.value }))} placeholder="Name the project or programme" />
-            <select value={initiative.divisionId} onChange={event => setInitiative(current => ({ ...current, divisionId: event.target.value }))}>
-              {divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}
-            </select>
-            <input value={initiative.system} onChange={event => setInitiative(current => ({ ...current, system: event.target.value }))} placeholder="External system" />
-            <input value={initiative.key} onChange={event => setInitiative(current => ({ ...current, key: event.target.value }))} placeholder="Project key" />
-            <input value={initiative.url} onChange={event => setInitiative(current => ({ ...current, url: event.target.value }))} placeholder="https://" />
-            <button className="primary" type="submit"><Plus size={15} /> Add initiative</button>
-          </form>
+          {canEdit && (
+            <form className="new-initiative" onSubmit={addInitiative}>
+              <b>New team initiative</b>
+              <input value={initiative.title} onChange={event => setInitiative(current => ({ ...current, title: event.target.value }))} placeholder="Name the project or programme" />
+              <select value={initiative.divisionId} onChange={event => setInitiative(current => ({ ...current, divisionId: event.target.value }))}>
+                {divisions.map(division => <option key={division.id} value={division.id}>{division.name}</option>)}
+              </select>
+              <input value={initiative.system} onChange={event => setInitiative(current => ({ ...current, system: event.target.value }))} placeholder="External system" />
+              <input value={initiative.key} onChange={event => setInitiative(current => ({ ...current, key: event.target.value }))} placeholder="Project key" />
+              <input value={initiative.url} onChange={event => setInitiative(current => ({ ...current, url: event.target.value }))} placeholder="https://" />
+              <button className="primary" type="submit"><Plus size={15} /> Add initiative</button>
+            </form>
+          )}
         </section>
       </aside>
     </>
