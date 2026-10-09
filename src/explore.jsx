@@ -401,6 +401,15 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
                 <strong>{item.title}</strong>
                 <button type="button" className="delete-small" onClick={() => actions.deleteInitiative(item.id)} aria-label="Delete initiative"><Trash2 size={14} /></button>
               </div>
+              {(item.plannedQuarters?.length || item.budget === true || item.budget === false) && (
+                <p className="import-note">
+                  {[
+                    item.plannedQuarters?.length ? `Planned ${item.plannedQuarters.join(' ')}` : '',
+                    item.budget === true ? 'Budget required' : '',
+                    item.budget === false ? 'No budget' : '',
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              )}
               <label><span>Title</span><input value={item.title} onChange={event => actions.saveInitiative(item.id, { title: event.target.value })} /></label>
               <label><span>Executing division</span>
                 <select value={item.divisionId} onChange={event => actions.saveInitiative(item.id, { divisionId: event.target.value })}>
