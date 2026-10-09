@@ -1,8 +1,10 @@
 import { use, useEffect, useMemo, useState } from 'react';
 import {
   Building2, CalendarRange, ChevronRight, Download, FileText, Filter, GitBranch,
-  LayoutDashboard, Menu, Plus, Printer, Rocket, Search, Settings, Target, X,
+  LayoutDashboard, LogOut, Menu, Plus, Printer, Rocket, Search, Settings, Target, Users, X,
 } from 'lucide-react';
+import { useAuth } from './authContext.js';
+import { UsersPage } from './UsersPage.jsx';
 import {
   CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
   divisionSelection, includesDivision, involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
@@ -60,6 +62,7 @@ function cleanExternal(external) {
 }
 
 export default function App() {
+  const { user, canEdit, isAdmin, signOut } = useAuth();
   const initialPlan = use(getPlanPromise());
   const [state, setState] = useState(initialPlan);
   const [page, setPage] = useState('Strategy');
@@ -75,7 +78,7 @@ export default function App() {
   const goal = view.goals.find(item => item.id === goalId) || null;
   const objective = view.objectives.find(item => item.id === objectiveId) || null;
 
-  useEffect(() => { persistPlan(state); }, [state]);
+  useEffect(() => { if (canEdit) persistPlan(state); }, [state, canEdit]);
   useEffect(() => { document.title = `${state.company.name} · Strategy`; }, [state.company.name]);
 
   const go = next => { setPage(next); setSidebar(false); };
@@ -219,10 +222,13 @@ export default function App() {
       }));
     },
   };
+  if (!canEdit) {
+    for (const key of Object.keys(actions)) actions[key] = () => {};
+  }
 
   return (
     <div className="app-shell">
-      <Sidebar open={sidebar} page={page} go={go} close={() => setSidebar(false)} profile={state.profile} reviewsDue={view.org.reviewsDue} />
+      <Sidebar open={sidebar} page={page} go={go} close={() => setSidebar(false)} user={user} isAdmin={isAdmin} canEdit={canEdit} signOut={signOut} reviewsDue={view.org.reviewsDue} />
       <main className="main">
         <header className="topbar">
           <button className="mobile-menu icon-button" type="button" onClick={() => setSidebar(true)} aria-label="Open menu"><Menu size={20} /></button>
@@ -239,21 +245,22 @@ export default function App() {
           </label>
           <button className="review-chip" type="button" onClick={() => go('Reviews')}>{view.org.reviewsDue} reviews due</button>
         </header>
-        {page === 'Strategy' && <StrategyPage view={view} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
-        {page === 'Goal' && <GoalPage goal={goal} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
-        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} onImport={() => setImportOpen(true)} />}
+        {page === 'Strategy' && <StrategyPage view={view} canEdit={canEdit} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
+        {page === 'Goal' && <GoalPage goal={goal} canEdit={canEdit} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
+        {page === 'Objectives' && <ObjectivesPage view={view} canEdit={canEdit} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} onImport={() => setImportOpen(true)} />}
         {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
-        {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
+        {page === 'Reviews' && <ReviewsPage view={view} canEdit={canEdit} actions={actions} onOpen={setObjectiveId} />}
         {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
         {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: [divisionId], role: 'any' }); go('Objectives'); }} />}
         {page === 'Reports' && <ReportsPage view={view} onOpen={id => { const match = view.objectives.find(item => item.id === id); if (match) openGoal(match.goalId, id); }} />}
-        {page === 'Settings' && <SettingsPage state={state} setState={setState} onImport={() => setImportOpen(true)} />}
+        {page === 'Users' && isAdmin && <UsersPage />}
+        {page === 'Settings' && <SettingsPage state={state} setState={setState} canEdit={canEdit} user={user} onImport={() => setImportOpen(true)} />}
       </main>
       {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
-      {modal?.type === 'goal' && <GoalModal pillars={state.pillars} goal={modal.goal} onClose={() => setModal(null)} onSave={form => modal.goal ? actions.saveGoal(modal.goal.id, form) : actions.addGoal(form)} />}
-      {modal?.type === 'objective' && <ObjectiveModal goals={view.goals} divisions={state.divisions} presetGoalId={modal.goalId} onClose={() => setModal(null)} onSave={actions.addObjective} />}
+      {canEdit && modal?.type === 'goal' && <GoalModal pillars={state.pillars} goal={modal.goal} onClose={() => setModal(null)} onSave={form => modal.goal ? actions.saveGoal(modal.goal.id, form) : actions.addGoal(form)} />}
+      {canEdit && modal?.type === 'objective' && <ObjectiveModal goals={view.goals} divisions={state.divisions} presetGoalId={modal.goalId} onClose={() => setModal(null)} onSave={actions.addObjective} />}
       {objective && <ObjectiveDrawer objective={objective} divisions={state.divisions} actions={actions} onClose={() => setObjectiveId(null)} />}
-      {importOpen && (
+      {canEdit && importOpen && (
         <ImportDialog
           state={state}
           onClose={() => setImportOpen(false)}
@@ -269,13 +276,15 @@ export default function App() {
   );
 }
 
-function Sidebar({ open, page, go, close, profile, reviewsDue }) {
+function Sidebar({ open, page, go, close, user, isAdmin, canEdit, signOut, reviewsDue }) {
+  const workspace = [...WORKSPACE, ...(isAdmin ? [['Users', Users]] : [])];
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand">
         <img className="brand-logo" src="/brand/mpao-logo-white.png" alt="Maldives Pension Office" />
         <button className="mobile-close" type="button" onClick={close} aria-label="Close menu"><X size={18} /></button>
       </div>
+      {!canEdit && <div className="view-only-chip">View only</div>}
       <nav>
         {NAV.map(([label, Icon]) => (
           <button key={label} type="button" className={page === label || (page === 'Goal' && label === 'Strategy') ? 'active' : ''} onClick={() => go(label)}>
@@ -285,7 +294,7 @@ function Sidebar({ open, page, go, close, profile, reviewsDue }) {
       </nav>
       <div className="nav-label">ORGANISATION</div>
       <nav>
-        {WORKSPACE.map(([label, Icon]) => (
+        {workspace.map(([label, Icon]) => (
           <button key={label} type="button" className={page === label ? 'active' : ''} onClick={() => go(label)}><Icon size={18} /><span>{label}</span></button>
         ))}
       </nav>
@@ -296,13 +305,17 @@ function Sidebar({ open, page, go, close, profile, reviewsDue }) {
       <img className="sidebar-forward" src="/brand/mpao-forward-white.png" alt="" />
       <div className="sidebar-foot">
         <button type="button" className={page === 'Settings' ? 'active' : ''} onClick={() => go('Settings')}><Settings size={18} />Settings</button>
-        <div className="profile"><div className="avatar">{initials(profile.name)}</div><div><b>{profile.name}</b><span>{profile.role}</span></div></div>
+        <div className="profile">
+          <div className="avatar">{initials(user.fullName)}</div>
+          <div><b>{user.fullName}</b><span>{canEdit ? 'Admin' : 'Viewer'}</span></div>
+          <button type="button" className="icon-button" onClick={signOut} aria-label="Sign out"><LogOut size={16} /></button>
+        </div>
       </div>
     </aside>
   );
 }
 
-function StrategyPage({ view, openGoal, addGoal, showCross }) {
+function StrategyPage({ view, canEdit, openGoal, addGoal, showCross }) {
   const attention = view.goals.filter(goal => goal.status === 'Off track' || goal.status === 'At risk').slice().sort((a, b) => a.progress - b.progress).slice(0, 4);
   const crm = view.objectives.find(item => item.id === 'obj-crm');
   return (
@@ -313,7 +326,7 @@ function StrategyPage({ view, openGoal, addGoal, showCross }) {
           <h1>Where the plan stands</h1>
           <p>Organisational performance is the overall progress of the strategic goals. Open a goal to reach its objectives and key results. Each key result has means of verification, and team initiatives show how the work is delivered.</p>
         </div>
-        <button className="primary" type="button" onClick={addGoal}><Plus size={16} /> Strategic goal</button>
+        {canEdit && <button className="primary" type="button" onClick={addGoal}><Plus size={16} /> Strategic goal</button>}
       </div>
       <div className="score-row">
         <article className="org-score">
@@ -385,7 +398,7 @@ function StrategyPage({ view, openGoal, addGoal, showCross }) {
   );
 }
 
-function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onManage, addObjective, editGoal }) {
+function GoalPage({ goal, canEdit, focusObjective, setFocusObjective, back, actions, onManage, addObjective, editGoal }) {
   const [year, setYear] = useState('all');
   useEffect(() => {
     if (!focusObjective) return;
@@ -403,11 +416,13 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
           <h1>{goal.code} {goal.title}</h1>
           <p>{goal.description}</p>
         </div>
-        <div className="hero-actions">
-          <button type="button" className="secondary" onClick={editGoal}>Edit goal</button>
-          <button type="button" className="secondary" onClick={() => actions.deleteGoal(goal.id)}>Delete</button>
-          <button type="button" className="primary" onClick={addObjective}><Plus size={16} /> Objective</button>
-        </div>
+        {canEdit && (
+          <div className="hero-actions">
+            <button type="button" className="secondary" onClick={editGoal}>Edit goal</button>
+            <button type="button" className="secondary" onClick={() => actions.deleteGoal(goal.id)}>Delete</button>
+            <button type="button" className="primary" onClick={addObjective}><Plus size={16} /> Objective</button>
+          </div>
+        )}
       </div>
       <div className="goal-summary">
         <div><span>Horizon</span><Horizon goal={goal} /></div>
@@ -437,7 +452,7 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
   );
 }
 
-function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
+function ObjectivesPage({ view, canEdit, filters, setFilters, onOpen, add, onImport }) {
   const divisions = divisionSelection(filters.division);
   const rows = view.objectives.filter(objective => {
     if (filters.pillar !== 'all' && objective.pillar?.id !== filters.pillar) return false;
@@ -456,10 +471,12 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
           <h1>Objectives</h1>
           <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
         </div>
-        <div className="hero-actions">
-          <button className="secondary" type="button" onClick={onImport}>Import 2027</button>
-          <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
-        </div>
+        {canEdit && (
+          <div className="hero-actions">
+            <button className="secondary" type="button" onClick={onImport}>Import 2027</button>
+            <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+          </div>
+        )}
       </div>
       <FilterBar>
         <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
@@ -542,7 +559,7 @@ function InitiativesPage({ view, filters, setFilters, onOpen }) {
   );
 }
 
-function ReviewsPage({ view, actions, onOpen }) {
+function ReviewsPage({ view, canEdit, actions, onOpen }) {
   const [year, setYear] = useState(String(CURRENT_YEAR));
   const [quarter, setQuarter] = useState(CURRENT_QUARTER);
   const [dueOnly, setDueOnly] = useState(true);
@@ -565,14 +582,14 @@ function ReviewsPage({ view, actions, onOpen }) {
         <label className="check-line filter-check"><input type="checkbox" checked={dueOnly} onChange={event => setDueOnly(event.target.checked)} /><span>Due only</span></label>
       </div>
       <div className="review-list">
-        {rows.map(objective => <ReviewRow key={`${objective.id}-${quarter}`} objective={objective} quarter={quarter} actions={actions} onOpen={() => onOpen(objective.id)} />)}
+        {rows.map(objective => <ReviewRow key={`${objective.id}-${quarter}`} objective={objective} quarter={quarter} canEdit={canEdit} actions={actions} onOpen={() => onOpen(objective.id)} />)}
         {!rows.length && <Empty title="Nothing waiting in this quarter" detail="Turn off Due only to see reviews that have already been filed." />}
       </div>
     </section>
   );
 }
 
-function ReviewRow({ objective, quarter, actions, onOpen }) {
+function ReviewRow({ objective, quarter, canEdit, actions, onOpen }) {
   const report = objective.quarters?.[quarter] || { progress: 0, note: '' };
   const [progress, setProgress] = useState(report.progress);
   const [note, setNote] = useState(report.note || '');
@@ -580,12 +597,19 @@ function ReviewRow({ objective, quarter, actions, onOpen }) {
     <article className="review-row">
       <button type="button" className="review-title" onClick={onOpen}><b>{objective.code}</b><span>{objective.title}</span><DivisionTag division={objective.division} compact /></button>
       <div className="review-live"><span>Live roll-up</span><Progress value={objective.progress} compact /><Status value={objective.status} /></div>
-      <form onSubmit={event => { event.preventDefault(); actions.saveQuarter(objective.id, quarter, { progress: Number(progress), note: note.trim() }); }}>
-        <label><span>{quarter} reported %</span><input type="number" min="0" max="100" value={progress} onChange={event => setProgress(event.target.value)} /></label>
-        <label className="grow"><span>Review note</span><input value={note} onChange={event => setNote(event.target.value)} placeholder="What changed this quarter?" required /></label>
-        <button className="secondary" type="button" onClick={() => setProgress(objective.progress)}>Use live</button>
-        <button className="primary" type="submit">File review</button>
-      </form>
+      {canEdit ? (
+        <form onSubmit={event => { event.preventDefault(); actions.saveQuarter(objective.id, quarter, { progress: Number(progress), note: note.trim() }); }}>
+          <label><span>{quarter} reported %</span><input type="number" min="0" max="100" value={progress} onChange={event => setProgress(event.target.value)} /></label>
+          <label className="grow"><span>Review note</span><input value={note} onChange={event => setNote(event.target.value)} placeholder="What changed this quarter?" required /></label>
+          <button className="secondary" type="button" onClick={() => setProgress(objective.progress)}>Use live</button>
+          <button className="primary" type="submit">File review</button>
+        </form>
+      ) : (
+        <div className="review-readonly">
+          <span>{quarter} reported {report.progress}%</span>
+          <p>{report.note || 'No review note yet.'}</p>
+        </div>
+      )}
     </article>
   );
 }
@@ -704,9 +728,8 @@ function ReportsPage({ view, onOpen }) {
   );
 }
 
-function SettingsPage({ state, setState, onImport }) {
+function SettingsPage({ state, setState, canEdit, user, onImport }) {
   const [company, setCompany] = useState(state.company);
-  const [profile, setProfile] = useState(state.profile);
   const [note, setNote] = useState('');
   const flash = message => { setNote(message); window.setTimeout(() => setNote(''), 2200); };
   return (
@@ -715,42 +738,50 @@ function SettingsPage({ state, setState, onImport }) {
         <div>
           <div className="eyebrow">SETTINGS</div>
           <h1>Workspace</h1>
-          <p>{planUsesDatabase() ? 'The strategy plan is stored in the Cloudflare database for this site. Restoring the sample replaces that shared plan.' : 'The sample plan is stored in this browser. Restoring it replaces any goals, objectives, and reviews you have edited.'}</p>
+          <p>{canEdit
+            ? (planUsesDatabase() ? 'The strategy plan is stored in the Cloudflare database for this site. Restoring the sample replaces that shared plan.' : 'The sample plan is stored in this browser. Restoring it replaces any goals, objectives, and reviews you have edited.')
+            : 'You have view-only access. An admin can change the plan and manage who is allowed to sign in.'}</p>
         </div>
         {note && <div className="settings-saved">{note}</div>}
       </div>
       <div className="settings-grid">
         <article className="module-card">
-          <div className="module-card-head"><div><b>Organisation</b><span>Shown in the sidebar and report heading.</span></div></div>
-          <form className="settings-form" onSubmit={event => { event.preventDefault(); setState(current => ({ ...current, company })); flash('Organisation saved'); }}>
-            <Field label="Name"><input value={company.name} onChange={event => setCompany({ ...company, name: event.target.value })} required /></Field>
-            <Field label="Tagline"><input value={company.tagline} onChange={event => setCompany({ ...company, tagline: event.target.value })} /></Field>
-            <div className="form-actions"><button className="primary" type="submit">Save organisation</button></div>
-          </form>
+          <div className="module-card-head"><div><b>Signed in</b><span>Google account matched to the user list.</span></div></div>
+          <div className="settings-form">
+            <Field label="Full name"><input value={user.fullName} readOnly /></Field>
+            <Field label="Google email"><input value={user.email} readOnly /></Field>
+            <Field label="Role" full><input value={canEdit ? 'Admin' : 'Viewer'} readOnly /></Field>
+          </div>
         </article>
-        <article className="module-card">
-          <div className="module-card-head"><div><b>Signed-in profile</b><span>Used for the workspace identity.</span></div></div>
-          <form className="settings-form" onSubmit={event => { event.preventDefault(); setState(current => ({ ...current, profile })); flash('Profile saved'); }}>
-            <Field label="Name"><input value={profile.name} onChange={event => setProfile({ ...profile, name: event.target.value })} required /></Field>
-            <Field label="Role"><input value={profile.role} onChange={event => setProfile({ ...profile, role: event.target.value })} /></Field>
-            <div className="form-actions"><button className="primary" type="submit">Save profile</button></div>
-          </form>
-        </article>
+        {canEdit && (
+          <article className="module-card">
+            <div className="module-card-head"><div><b>Organisation</b><span>Shown in the sidebar and report heading.</span></div></div>
+            <form className="settings-form" onSubmit={event => { event.preventDefault(); setState(current => ({ ...current, company })); flash('Organisation saved'); }}>
+              <Field label="Name"><input value={company.name} onChange={event => setCompany({ ...company, name: event.target.value })} required /></Field>
+              <Field label="Tagline"><input value={company.tagline} onChange={event => setCompany({ ...company, tagline: event.target.value })} /></Field>
+              <div className="form-actions"><button className="primary" type="submit">Save organisation</button></div>
+            </form>
+          </article>
+        )}
       </div>
-      <article className="module-card restore-card">
-        <div>
-          <b>Import the 2027 annual work plan</b>
-          <p>Bring in objectives, key results, team initiatives, and responsible departments from the Annual Work Plan 2027_Working sheet.</p>
-        </div>
-        <button type="button" className="secondary" onClick={onImport}>Import 2027</button>
-      </article>
-      <article className="module-card restore-card">
-        <div>
-          <b>Restore the sample plan</b>
-          <p>Brings back the Pension Office priority areas, strategic goals, objectives, key results, initiatives, and means of verification.</p>
-        </div>
-        <button type="button" className="secondary" onClick={() => { if (window.confirm('Replace the current plan with the sample strategy?')) { resetPlan().then(seed => { setState(seed); flash('Sample plan restored'); }).catch(() => flash('Could not restore the plan')); } }}>Restore sample plan</button>
-      </article>
+      {canEdit && (
+        <>
+          <article className="module-card restore-card">
+            <div>
+              <b>Import the 2027 annual work plan</b>
+              <p>Bring in objectives, key results, team initiatives, and responsible departments from the Annual Work Plan 2027_Working sheet.</p>
+            </div>
+            <button type="button" className="secondary" onClick={onImport}>Import 2027</button>
+          </article>
+          <article className="module-card restore-card">
+            <div>
+              <b>Restore the sample plan</b>
+              <p>Brings back the Pension Office priority areas, strategic goals, objectives, key results, initiatives, and means of verification.</p>
+            </div>
+            <button type="button" className="secondary" onClick={() => { if (window.confirm('Replace the current plan with the sample strategy?')) { resetPlan().then(seed => { setState(seed); flash('Sample plan restored'); }).catch(() => flash('Could not restore the plan')); } }}>Restore sample plan</button>
+          </article>
+        </>
+      )}
     </section>
   );
 }
