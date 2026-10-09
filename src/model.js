@@ -44,15 +44,15 @@ export const PILLARS = [
     code: '2',
     name: 'Optimise and Innovate Solutions',
     intent: 'Platforms, automation, and shared services that raise quality for members and partners.',
-    color: '#4B56F9',
-    soft: '#EEEEFE',
+    color: '#0E7EA8',
+    soft: '#D4F3FB',
   },
   {
     id: 'pa3',
     code: '3',
     name: 'Pension Sustainability',
     intent: 'A resilient fund, wider investment choice, and a stronger social-protection design.',
-    color: '#010670',
+    color: '#8F6A1F',
     soft: '#F9E9CD',
   },
   {
@@ -60,8 +60,10 @@ export const PILLARS = [
     code: '4',
     name: 'Organizational Development and Resilience',
     intent: 'Governance, people, security, and the operating environment that keep the office dependable.',
-    color: '#2430B0',
-    soft: '#E8EAFC',
+    color: '#8E3458',
+    soft: '#FDE8F2',
+    badge: '#F4B8CC',
+    ink: '#8E3458',
   },
 ];
 
@@ -525,10 +527,23 @@ export function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function withPillarTheme(pillar) {
+  const theme = PILLARS.find(item => item.id === pillar.id);
+  if (!theme) return pillar;
+  return {
+    ...pillar,
+    color: theme.color,
+    soft: theme.soft,
+    badge: theme.badge || theme.color,
+    ink: theme.ink || '#fff',
+  };
+}
+
 export function decorate(state) {
   const divisionById = Object.fromEntries(state.divisions.map(division => [division.id, division]));
   const goalById = Object.fromEntries(state.goals.map(goal => [goal.id, goal]));
-  const pillarById = Object.fromEntries(state.pillars.map(pillar => [pillar.id, pillar]));
+  const themedPillars = state.pillars.map(withPillarTheme);
+  const pillarById = Object.fromEntries(themedPillars.map(pillar => [pillar.id, pillar]));
   const verificationsByInitiative = group(state.verifications, 'initiativeId');
   const keyResultsByObjective = group(state.keyResults || [], 'objectiveId');
   const meansByKeyResult = group(state.krMeans || [], 'keyResultId');
@@ -606,7 +621,7 @@ export function decorate(state) {
   });
 
   const goalsByPillar = group(goals, 'pillarId');
-  const pillars = state.pillars.map(pillar => {
+  const pillars = themedPillars.map(pillar => {
     const children = (goalsByPillar[pillar.id] || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
     const progress = average(children.map(item => item.progress));
     return {
@@ -657,8 +672,13 @@ export function decorate(state) {
   };
 }
 
-export function involvesDivision(objective, divisionId, role) {
-  if (!divisionId || divisionId === 'all') return true;
+export function divisionSelection(value) {
+  if (value == null || value === '' || value === 'all') return [];
+  const ids = Array.isArray(value) ? value : [value];
+  return [...new Set(ids.filter(id => id && id !== 'all'))];
+}
+
+function matchesDivision(objective, divisionId, role) {
   const responsible = objective.divisionId === divisionId;
   const supporting = (objective.supportingIds || []).includes(divisionId);
   const executing = objective.initiatives?.some(item => item.divisionId === divisionId);
@@ -666,6 +686,12 @@ export function involvesDivision(objective, divisionId, role) {
   if (role === 'supporting') return supporting;
   if (role === 'executing') return executing;
   return responsible || supporting || executing;
+}
+
+export function involvesDivision(objective, divisionId, role) {
+  const ids = divisionSelection(divisionId);
+  if (!ids.length) return true;
+  return ids.some(id => matchesDivision(objective, id, role));
 }
 
 export function removeGoal(state, goalId) {

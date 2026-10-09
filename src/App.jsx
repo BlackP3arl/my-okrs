@@ -5,11 +5,12 @@ import {
 } from 'lucide-react';
 import {
   CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, blankQuarters, clamp, decorate,
-  involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
+  divisionSelection, involvesDivision, removeGoal, removeInitiative, removeObjective, uid,
 } from './model.js';
 import { getPlanPromise, persistPlan, planUsesDatabase, resetPlan } from './planClient.js';
 import { AlignmentTree, GoalCascade, GoalModal, ObjectiveDrawer, ObjectiveModal } from './explore.jsx';
-import { DivisionTag, Empty, Field, Horizon, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
+import { ImportDialog } from './ImportPanel.jsx';
+import { DivisionTag, Empty, Field, Horizon, MultiSelectFilter, Progress, QuarterPips, Ring, SelectFilter, Status } from './ui.jsx';
 
 const NAV = [
   ['Strategy', LayoutDashboard],
@@ -26,7 +27,7 @@ const STATUSES = ['Achieved', 'On track', 'At risk', 'Off track', 'Not started']
 const INIT_STATUSES = ['Done', 'In progress', 'Blocked', 'Not started'];
 const YEARS = ['2025', '2026', '2027', '2028', '2029', '2030'];
 
-const blankObjectives = { q: '', pillar: 'all', division: 'all', role: 'any', status: 'all', year: 'all' };
+const blankObjectives = { q: '', pillar: 'all', division: [], role: 'any', status: 'all', year: 'all' };
 const blankInitiatives = { q: '', pillar: 'all', division: 'all', status: 'all', year: 'all', cross: false };
 
 function initials(name) {
@@ -69,6 +70,7 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [objectiveFilters, setObjectiveFilters] = useState(blankObjectives);
   const [initiativeFilters, setInitiativeFilters] = useState(blankInitiatives);
+  const [importOpen, setImportOpen] = useState(false);
   const view = useMemo(() => decorate(state), [state]);
   const goal = view.goals.find(item => item.id === goalId) || null;
   const objective = view.objectives.find(item => item.id === objectiveId) || null;
@@ -239,18 +241,30 @@ export default function App() {
         </header>
         {page === 'Strategy' && <StrategyPage view={view} openGoal={openGoal} addGoal={() => setModal({ type: 'goal' })} showCross={() => { setInitiativeFilters({ ...blankInitiatives, cross: true, year: String(CURRENT_YEAR) }); go('Initiatives'); }} />}
         {page === 'Goal' && <GoalPage goal={goal} focusObjective={focusObjective} setFocusObjective={setFocusObjective} back={() => go('Strategy')} actions={actions} onManage={setObjectiveId} addObjective={() => setModal({ type: 'objective', goalId: goal?.id })} editGoal={() => setModal({ type: 'goal', goal })} />}
-        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} />}
+        {page === 'Objectives' && <ObjectivesPage view={view} filters={objectiveFilters} setFilters={setObjectiveFilters} onOpen={setObjectiveId} add={() => setModal({ type: 'objective' })} onImport={() => setImportOpen(true)} />}
         {page === 'Initiatives' && <InitiativesPage view={view} filters={initiativeFilters} setFilters={setInitiativeFilters} onOpen={setObjectiveId} />}
         {page === 'Reviews' && <ReviewsPage view={view} actions={actions} onOpen={setObjectiveId} />}
         {page === 'Alignment' && <AlignmentPage view={view} actions={actions} onManage={setObjectiveId} />}
-        {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: divisionId, role: 'any' }); go('Objectives'); }} />}
+        {page === 'Divisions' && <DivisionsPage view={view} openDivision={divisionId => { setObjectiveFilters({ ...blankObjectives, division: [divisionId], role: 'any' }); go('Objectives'); }} />}
         {page === 'Reports' && <ReportsPage view={view} onOpen={id => { const match = view.objectives.find(item => item.id === id); if (match) openGoal(match.goalId, id); }} />}
-        {page === 'Settings' && <SettingsPage state={state} setState={setState} />}
+        {page === 'Settings' && <SettingsPage state={state} setState={setState} onImport={() => setImportOpen(true)} />}
       </main>
       {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
       {modal?.type === 'goal' && <GoalModal pillars={state.pillars} goal={modal.goal} onClose={() => setModal(null)} onSave={form => modal.goal ? actions.saveGoal(modal.goal.id, form) : actions.addGoal(form)} />}
       {modal?.type === 'objective' && <ObjectiveModal goals={view.goals} divisions={state.divisions} presetGoalId={modal.goalId} onClose={() => setModal(null)} onSave={actions.addObjective} />}
       {objective && <ObjectiveDrawer objective={objective} divisions={state.divisions} actions={actions} onClose={() => setObjectiveId(null)} />}
+      {importOpen && (
+        <ImportDialog
+          state={state}
+          onClose={() => setImportOpen(false)}
+          onApply={next => {
+            setState(next);
+            setImportOpen(false);
+            setObjectiveFilters({ ...blankObjectives, year: '2027' });
+            go('Objectives');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -323,7 +337,7 @@ function StrategyPage({ view, openGoal, addGoal, showCross }) {
         {view.pillars.map(pillar => (
           <section key={pillar.id} className="pillar-col" style={{ '--accent': pillar.color, '--soft': pillar.soft }}>
             <header>
-              <div className="pillar-index" style={{ background: pillar.color }}>{pillar.code}</div>
+              <div className="pillar-index" style={{ background: pillar.badge || pillar.color, color: pillar.ink || '#fff' }}>{pillar.code}</div>
               <h2>{pillar.name}</h2>
               <p>{pillar.intent}</p>
             </header>
@@ -423,16 +437,17 @@ function GoalPage({ goal, focusObjective, setFocusObjective, back, actions, onMa
   );
 }
 
-function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
+function ObjectivesPage({ view, filters, setFilters, onOpen, add, onImport }) {
+  const divisions = divisionSelection(filters.division);
   const rows = view.objectives.filter(objective => {
     if (filters.pillar !== 'all' && objective.pillar?.id !== filters.pillar) return false;
     if (filters.year !== 'all' && objective.year !== filters.year) return false;
     if (filters.status !== 'all' && objective.status !== filters.status) return false;
-    if (!involvesDivision(objective, filters.division, filters.role)) return false;
+    if (!involvesDivision(objective, divisions, filters.role)) return false;
     const haystack = `${objective.code} ${objective.title} ${objective.division?.name} ${objective.goal?.title} ${objective.supporting.map(division => division.name).join(' ')} ${objective.keyResults.map(item => `${item.title} ${(item.means || []).map(mean => mean.title).join(' ')}`).join(' ')}`.toLowerCase();
     return haystack.includes(filters.q.toLowerCase());
   }).sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
-  const active = ['pillar', 'division', 'status', 'year'].filter(key => filters[key] !== 'all').length + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
+  const active = ['pillar', 'status', 'year'].filter(key => filters[key] !== 'all').length + (divisions.length ? 1 : 0) + (filters.role !== 'any' ? 1 : 0) + (filters.q ? 1 : 0);
   return (
     <section className="content">
       <div className="hero">
@@ -441,16 +456,20 @@ function ObjectivesPage({ view, filters, setFilters, onOpen, add }) {
           <h1>Objectives</h1>
           <p>Filter the work divisions have committed to the strategic goals. Quarterly marks are the reported reviews. The percentage rolls up from key results.</p>
         </div>
-        <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+        <div className="hero-actions">
+          <button className="secondary" type="button" onClick={onImport}>Import 2027</button>
+          <button className="primary" type="button" onClick={add}><Plus size={16} /> Objective</button>
+        </div>
       </div>
       <FilterBar>
         <SelectFilter label="Priority area" value={filters.pillar} onChange={pillar => setFilters({ ...filters, pillar })} options={[{ value: 'all', label: 'All priority areas' }, ...view.pillars.map(pillar => ({ value: pillar.id, label: pillar.name }))]} />
-        <SelectFilter label="Division" value={filters.division} onChange={division => setFilters({ ...filters, division })} options={[{ value: 'all', label: 'All divisions' }, ...view.divisions.map(division => ({ value: division.id, label: division.name }))]} />
+        <MultiSelectFilter label="Division" values={divisions} onChange={division => setFilters({ ...filters, division })} options={view.divisions.map(division => ({ value: division.id, label: division.name }))} emptyLabel="All divisions" />
         <SelectFilter label="Division role" value={filters.role} onChange={role => setFilters({ ...filters, role })} options={[{ value: 'any', label: 'Any role' }, { value: 'responsible', label: 'Responsible' }, { value: 'supporting', label: 'Supporting' }, { value: 'executing', label: 'Executing an initiative' }]} />
         <SelectFilter label="Status" value={filters.status} onChange={status => setFilters({ ...filters, status })} options={[{ value: 'all', label: 'All statuses' }, ...STATUSES.map(status => ({ value: status, label: status }))]} />
         <SelectFilter label="Year" value={filters.year} onChange={year => setFilters({ ...filters, year })} options={[{ value: 'all', label: 'All years' }, ...YEARS.map(year => ({ value: year, label: year }))]} />
         <button type="button" className="text-reset" disabled={!active} onClick={() => setFilters(blankObjectives)}>Reset{active ? ` (${active})` : ''}</button>
       </FilterBar>
+      <p className="result-count">{rows.length} objective{rows.length === 1 ? '' : 's'}</p>
       <div className="register">
         <div className="register-row head"><span>Objective</span><span>Priority / goal</span><span>Responsible</span><span>Year</span><span>Quarters</span><span>Progress</span><span>Status</span></div>
         {rows.map(objective => (
@@ -683,7 +702,7 @@ function ReportsPage({ view, onOpen }) {
   );
 }
 
-function SettingsPage({ state, setState }) {
+function SettingsPage({ state, setState, onImport }) {
   const [company, setCompany] = useState(state.company);
   const [profile, setProfile] = useState(state.profile);
   const [note, setNote] = useState('');
@@ -716,6 +735,13 @@ function SettingsPage({ state, setState }) {
           </form>
         </article>
       </div>
+      <article className="module-card restore-card">
+        <div>
+          <b>Import the 2027 annual work plan</b>
+          <p>Bring in objectives, key results, team initiatives, and responsible departments from the Annual Work Plan 2027_Working sheet.</p>
+        </div>
+        <button type="button" className="secondary" onClick={onImport}>Import 2027</button>
+      </article>
       <article className="module-card restore-card">
         <div>
           <b>Restore the sample plan</b>

@@ -1,4 +1,5 @@
-import { Building2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Building2, ChevronDown, X } from 'lucide-react';
 import { QUARTERS, STATUS_TONE } from './model.js';
 
 export function Progress({ value, compact }) {
@@ -91,5 +92,59 @@ export function SelectFilter({ label, value, onChange, options }) {
         {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
+  );
+}
+
+export function MultiSelectFilter({ label, values, onChange, options, emptyLabel = 'All' }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef(null);
+  const selected = new Set(values);
+  const visible = options.filter(option => option.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const summary = values.length
+    ? values.map(value => options.find(option => option.value === value)?.label).filter(Boolean).join(', ')
+    : emptyLabel;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointer = event => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const toggle = value => {
+    onChange(selected.has(value) ? values.filter(item => item !== value) : [...values, value]);
+  };
+
+  return (
+    <div className="filter-field multi-filter" ref={rootRef}>
+      <span>{label}</span>
+      <button type="button" className="multi-filter-button" aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(current => !current)}>
+        <em>{summary}</em>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="multi-filter-menu" role="listbox" aria-multiselectable="true">
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a division" aria-label="Find a division" />
+          <button type="button" className={!values.length ? 'selected' : ''} onClick={() => onChange([])}>{emptyLabel}</button>
+          {visible.map(option => (
+            <label key={option.value}>
+              <input type="checkbox" checked={selected.has(option.value)} onChange={() => toggle(option.value)} />
+              <span>{option.label}</span>
+            </label>
+          ))}
+          {!visible.length && <p>No divisions match</p>}
+        </div>
+      )}
+    </div>
   );
 }
