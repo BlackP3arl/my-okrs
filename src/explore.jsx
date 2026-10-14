@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import { CURRENT_QUARTER, CURRENT_YEAR, KEY_RESULT_MAX, KEY_RESULT_MIN, QUARTERS, blankQuarters, uid } from './model.js';
-import { DivisionTag, Empty, Field, Horizon, Modal, Progress, QuarterPips, Status } from './ui.jsx';
+import { DivisionTag, Empty, Field, Horizon, Modal, Progress, QuarterPips, QuarterTicks, Status } from './ui.jsx';
 
 function MovEditor({ mov, onProgress, onDelete }) {
   return (
@@ -70,7 +70,7 @@ function KeyResultList({ keyResults, onProgress, onSaveMean, onAddMean, onRemove
   );
 }
 
-export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true }) {
+export function InitiativePanel({ initiative, onProgress, onAdd, onPlanQuarters, showAdd = true }) {
   const [title, setTitle] = useState('');
   return (
     <article className={`initiative-panel ${initiative.crossDivision ? 'cross' : ''}`}>
@@ -91,7 +91,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
       <div className="initiative-meta">
         <span>
           {initiative.verified}/{initiative.movs.length} verification checks complete
-          {initiative.plannedQuarters?.length ? ` · Planned ${initiative.plannedQuarters.join(' ')}` : ''}
+          {!onPlanQuarters && initiative.plannedQuarters?.length ? ` · Planned ${initiative.plannedQuarters.join(' ')}` : ''}
           {initiative.budget === true ? ' · Budget required' : ''}
           {initiative.budget === false ? ' · No budget' : ''}
         </span>
@@ -102,6 +102,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
           </a>
         ) : initiative.external?.system ? <span>{initiative.external.system}{initiative.external.key ? ` · ${initiative.external.key}` : ''}</span> : null}
       </div>
+      {onPlanQuarters && <QuarterTicks quarters={initiative.plannedQuarters} onChange={plannedQuarters => onPlanQuarters(initiative.id, plannedQuarters)} />}
       <div className="mov-list">
         {initiative.movs.map(mov => <MovEditor key={mov.id} mov={mov} onProgress={onProgress} />)}
         {!initiative.movs.length && <p className="quiet">No verification checks yet.</p>}
@@ -116,7 +117,7 @@ export function InitiativePanel({ initiative, onProgress, onAdd, showAdd = true 
   );
 }
 
-export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
+export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress, onAddVerification, onPlanQuarters, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   return (
     <article className={`objective-card ${open ? 'open' : ''}`} id={`objective-${objective.id}`}>
       <button type="button" className="objective-main" onClick={onToggle}>
@@ -154,7 +155,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
           </div>
           <KeyResultList keyResults={objective.keyResults} onProgress={onKeyResult} onSaveMean={onSaveMean} onAddMean={onAddMean} onRemoveMean={onRemoveMean} />
           {objective.initiatives.map(initiative => (
-            <InitiativePanel key={initiative.id} initiative={initiative} onProgress={onProgress} onAdd={onAddVerification} />
+            <InitiativePanel key={initiative.id} initiative={initiative} onProgress={onProgress} onAdd={onAddVerification} onPlanQuarters={onPlanQuarters} />
           ))}
           <div className="detail-actions">
             <button type="button" className="secondary" onClick={onManage}>Manage objective</button>
@@ -165,7 +166,7 @@ export function ObjectiveCard({ objective, open, onToggle, onManage, onProgress,
   );
 }
 
-export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
+export function GoalCascade({ goal, year, openObjective, setOpenObjective, onManage, onProgress, onAddVerification, onPlanQuarters, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   const objectives = goal.objectives.filter(item => year === 'all' || item.year === year);
   return (
     <div className="cascade-list">
@@ -178,6 +179,7 @@ export function GoalCascade({ goal, year, openObjective, setOpenObjective, onMan
           onManage={() => onManage(objective.id)}
           onProgress={onProgress}
           onAddVerification={onAddVerification}
+          onPlanQuarters={onPlanQuarters}
           onKeyResult={onKeyResult}
           onSaveMean={onSaveMean}
           onAddMean={onAddMean}
@@ -325,7 +327,7 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
     event.preventDefault();
     if (!initiative.title.trim()) return;
     const external = initiative.system ? { system: initiative.system, key: initiative.key.trim(), url: initiative.url.trim() } : null;
-    actions.addInitiative({ id: uid('init'), objectiveId: objective.id, title: initiative.title.trim(), divisionId: initiative.divisionId, external, blocked: false });
+    actions.addInitiative({ id: uid('init'), objectiveId: objective.id, title: initiative.title.trim(), divisionId: initiative.divisionId, external, blocked: false, plannedQuarters: [] });
     setInitiative({ title: '', divisionId: objective.divisionId, system: '', key: '', url: '' });
   };
 
@@ -401,14 +403,9 @@ export function ObjectiveDrawer({ objective, divisions, actions, onClose }) {
                 <strong>{item.title}</strong>
                 <button type="button" className="delete-small" onClick={() => actions.deleteInitiative(item.id)} aria-label="Delete initiative"><Trash2 size={14} /></button>
               </div>
-              {(item.plannedQuarters?.length || item.budget === true || item.budget === false) && (
-                <p className="import-note">
-                  {[
-                    item.plannedQuarters?.length ? `Planned ${item.plannedQuarters.join(' ')}` : '',
-                    item.budget === true ? 'Budget required' : '',
-                    item.budget === false ? 'No budget' : '',
-                  ].filter(Boolean).join(' · ')}
-                </p>
+              <QuarterTicks quarters={item.plannedQuarters} onChange={plannedQuarters => actions.saveInitiative(item.id, { plannedQuarters })} />
+              {(item.budget === true || item.budget === false) && (
+                <p className="import-note">{item.budget ? 'Budget required' : 'No budget'}</p>
               )}
               <label><span>Title</span><input value={item.title} onChange={event => actions.saveInitiative(item.id, { title: event.target.value })} /></label>
               <label><span>Executing division</span>
@@ -465,7 +462,7 @@ function AddMov({ onAdd }) {
   );
 }
 
-export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onManage, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
+export function AlignmentTree({ pillars, year, onProgress, onAddVerification, onPlanQuarters, onManage, onKeyResult, onSaveMean, onAddMean, onRemoveMean }) {
   const [openGoal, setOpenGoal] = useState(null);
   const [openObjective, setOpenObjective] = useState(null);
   return (
@@ -500,6 +497,7 @@ export function AlignmentTree({ pillars, year, onProgress, onAddVerification, on
                     onManage={() => onManage(objective.id)}
                     onProgress={onProgress}
                     onAddVerification={onAddVerification}
+                    onPlanQuarters={onPlanQuarters}
                     onKeyResult={onKeyResult}
                     onSaveMean={onSaveMean}
                     onAddMean={onAddMean}
