@@ -2,6 +2,9 @@ name = "my-okrs"
 compatibility_date = "2025-04-01"
 pages_build_output_dir = "./dist"
 
+# Set these as Cloudflare secrets (or in .dev.vars locally):
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET
+
 [[d1_databases]]
 binding = "DB"
 database_name = "strategy-plan"

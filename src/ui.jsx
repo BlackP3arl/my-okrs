@@ -36,14 +36,14 @@ export function DivisionTag({ division, compact }) {
   );
 }
 
-export function QuarterTicks({ quarters, onChange, label = 'Planned quarters' }) {
+export function QuarterTicks({ quarters, onChange, label = 'Planned quarters', disabled = false }) {
   const selected = new Set(quarters || []);
   return (
     <div className="quarter-ticks" role="group" aria-label={label}>
       <span>{label}</span>
       {QUARTERS.map(quarter => (
         <label key={quarter}>
-          <input type="checkbox" checked={selected.has(quarter)} onChange={() => onChange(togglePlannedQuarter(quarters, quarter))} />
+          <input type="checkbox" checked={selected.has(quarter)} disabled={disabled} onChange={() => onChange(togglePlannedQuarter(quarters, quarter))} />
           <span>{quarter}</span>
         </label>
       ))}

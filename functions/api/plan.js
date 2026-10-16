@@ -1,8 +1,5 @@
-const SCHEMA = `CREATE TABLE IF NOT EXISTS plan (
-  id INTEGER PRIMARY KEY,
-  data TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)`;
+import { getDb, isResponse, requireUser } from '../_lib/db.js';
+import { json } from '../_lib/http.js';
 
 function isPlan(value) {
   return Boolean(
@@ -15,21 +12,12 @@ function isPlan(value) {
   );
 }
 
-function json(body, status = 200) {
-  return Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
-}
-
-async function database(env) {
-  const db = env.DB;
-  if (!db) return null;
-  await db.prepare(SCHEMA).run();
-  return db;
-}
-
 export async function onRequest(context) {
   const { request, env } = context;
-  const db = await database(env);
+  const db = await getDb(env);
   if (!db) return json({ error: 'D1 binding DB is not configured.' }, 503);
+  const user = await requireUser(context, db);
+  if (isResponse(user)) return user;
 
   if (request.method === 'GET') {
     const row = await db.prepare('SELECT data FROM plan WHERE id = 1').first();
@@ -44,6 +32,7 @@ export async function onRequest(context) {
   }
 
   if (request.method === 'PUT') {
+    if (user.role !== 'admin') return json({ error: 'Viewers cannot change the plan.' }, 403);
     let plan;
     try {
       plan = await request.json();
