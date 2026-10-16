@@ -145,6 +145,14 @@
 .register-row small,.initiative-row small{color:#80848e;font-size:11px}
 .quarter-text{font-size:11px;color:#5c6370}
 .initiative-row{width:100%;border:1px solid var(--border);background:#fff;border-radius:12px;display:grid;grid-template-columns:minmax(240px,1.5fr) minmax(180px,.8fr) 80px 140px 120px 110px;gap:10px;align-items:center;padding:12px 14px;text-align:left;color:inherit}
+.initiative-open{border:0;background:transparent;padding:0;text-align:left;color:inherit;display:block;cursor:pointer}
+.initiative-open:hover b{color:#010670}
+.quarter-ticks{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.initiative-row .quarter-ticks,.drawer-initiative .quarter-ticks,.initiative-panel .quarter-ticks{margin-top:8px}
+.quarter-ticks>span{font:700 11px Outfit;color:#5c6370}
+.drawer-initiative .quarter-ticks label,.initiative-panel .quarter-ticks label,.initiative-row .quarter-ticks label{display:inline-flex;flex-direction:row;align-items:center;gap:4px;width:auto;border:1px solid #e1e3e8;border-radius:999px;padding:4px 8px;background:#fff;font-size:12px;font-weight:700;color:#2c303a}
+.drawer-initiative .quarter-ticks input,.initiative-panel .quarter-ticks input,.initiative-row .quarter-ticks input{width:14px;height:14px;margin:0;padding:0;border:0;box-shadow:none;accent-color:#010670}
+.quarter-ticks label:has(input:checked){background:#E6E7F4;border-color:#C9CCE8;color:#010670}
 .initiative-row.cross{border-color:#F3C4BC;border-left:3px solid #EA4927;background:#FFF8F6}
 .initiative-row:hover{border-color:#C9CCE8}
 .stack-tags{flex-direction:column;align-items:flex-start}
